@@ -1,0 +1,80 @@
+//go:build linux
+
+package main
+
+import (
+	"fmt"
+	"net"
+	"syscall"
+	"time"
+
+	"sni-spoofing-go/injection"
+)
+
+// dialOutgoing creates and registers an outgoing TCP connection.
+// On Linux, uses syscall.Bind inside Dialer.Control to get the source port
+// and register with nfqueue BEFORE the SYN packet is sent.
+func dialOutgoing(
+	interfaceIPv4, connectIP string, connectPort int,
+	fakeData []byte, bypassMethod string,
+	incomingSock net.Conn,
+	fakeInjector *injection.FakeTcpInjector,
+) (outgoingSock net.Conn, conn *injection.FakeInjectiveConnection, srcPort uint16, err error) {
+	targetAddr := net.JoinHostPort(connectIP, fmt.Sprintf("%d", connectPort))
+
+	var registered bool
+
+	dialer := net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 11 * time.Second,
+		Control: func(netw, addr string, c syscall.RawConn) error {
+			var bindErr error
+			c.Control(func(fd uintptr) {
+				syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+				syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1)
+
+				sa := &syscall.SockaddrInet4{Port: 0}
+				copy(sa.Addr[:], net.ParseIP(interfaceIPv4).To4())
+				bindErr = syscall.Bind(int(fd), sa)
+				if bindErr != nil {
+					return
+				}
+
+				localSA, gsErr := syscall.Getsockname(int(fd))
+				if gsErr != nil {
+					bindErr = gsErr
+					return
+				}
+				srcPort = uint16(localSA.(*syscall.SockaddrInet4).Port)
+			})
+			if bindErr != nil {
+				return bindErr
+			}
+
+			conn = injection.NewFakeInjectiveConnection(
+				nil, interfaceIPv4, connectIP, srcPort, uint16(connectPort),
+				fakeData, bypassMethod, incomingSock,
+			)
+			fakeInjector.Connections.Store(conn.ID, conn)
+			registered = true
+			return nil
+		},
+	}
+
+	outgoingSock, err = dialer.Dial("tcp4", targetAddr)
+	if err != nil {
+		if registered {
+			key := injection.ConnID{SrcIP: interfaceIPv4, SrcPort: srcPort, DstIP: connectIP, DstPort: uint16(connectPort)}
+			if val, ok := fakeInjector.Connections.Load(key); ok {
+				c := val.(*injection.FakeInjectiveConnection)
+				c.Mu.Lock()
+				c.Monitor = false
+				c.Mu.Unlock()
+				fakeInjector.Connections.Delete(key)
+			}
+		}
+		return nil, nil, 0, err
+	}
+
+	return outgoingSock, conn, srcPort, nil
+}

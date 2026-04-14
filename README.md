@@ -9,6 +9,7 @@ Cross-platform: **Windows** (WinDivert) and **Linux/OpenWrt** (nfqueue + raw soc
 This project is a complete port of the original **[SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing)** by **[@patterniha](https://github.com/patterniha)**. All credit for the original concept, algorithm, and DPI bypass technique goes to them.
 
 This Go version maintains full compatibility with the original Python logic while adding:
+
 - Native concurrency with goroutines
 - Cross-compilation to any OS/architecture with a single command
 - Single static binary — no Python interpreter or pip dependencies needed
@@ -26,10 +27,12 @@ This tool acts as a local TCP proxy that:
 
 ## Platform Support
 
-| Platform | Packet Interception | Fake Injection | Requirements |
-|---|---|---|---|
-| **Windows** | WinDivert driver | WinDivert send | `WinDivert.dll` + `WinDivert64.sys` |
-| **Linux/OpenWrt** | nfqueue (netfilter) | Raw socket | `iptables`, `nfnetlink_queue` kernel module |
+
+| Platform          | Packet Interception | Fake Injection | Requirements                                |
+| ----------------- | ------------------- | -------------- | ------------------------------------------- |
+| **Windows**       | WinDivert driver    | WinDivert send | `WinDivert.dll` + `WinDivert64.sys`         |
+| **Linux/OpenWrt** | nfqueue (netfilter) | Raw socket     | `iptables`, `nfnetlink_queue` kernel module |
+
 
 ## Quick Start
 
@@ -107,11 +110,35 @@ docker run --rm -it \
   -fake-sni auth.vercel.com
 ```
 
+#### For Iranian users
+
+If pulling from `ghcr.io` is slow/blocked, use a **local Docker registry mirror** (example below). The image name/tag is the same; only the registry host changes.
+
+Also, if you don’t have Docker installed, you can use **Podman**, which is available in most Linux distributions’ package repositories.
+
+```bash
+# Debian/Ubuntu
+sudo apt update && sudo apt install -y podman
+
+# RHEL/CentOS/Fedora
+sudo yum install -y podman
+
+# Run from a local registry mirror (example):
+podman run --rm -it \
+  --network host \
+  --cap-add NET_ADMIN --cap-add NET_RAW \
+  ghcr.hamdocker.ir/aleskxyz/sni-spoofing-go:latest \
+  -listen 127.0.0.1:40443 \
+  -connect 188.114.98.0:443 \
+  -fake-sni auth.vercel.com
+```
+
 ### Test (Cloudflare example)
 
 This is a plain TCP proxy (not an HTTP proxy).
 
 To make this method work in practice you usually need:
+
 - A **working upstream IP** you can reach on `:443` (set via `-connect IP:443`). In general this should be an IP that actually serves TLS for the hostname you’re testing, but depending on the network/DPI you may need to experiment.
 - A **working decoy SNI** (set via `-fake-sni`) that your DPI allows. This depends on your network/DPI and may require experimentation.
 
@@ -131,7 +158,7 @@ sudo ./sni-spoofing-linux-amd64 \
   -fake-sni auth.vercel.com
 
 # PoC: fetch a real page through the local listener while keeping SNI/Host correct.
-curl -sSLf -H 'Host: one.one.one.one' --resolve one.one.one.one:8080:127.0.0.1 https://one.one.one.one:8080/ | grep '^\.\.'
+curl -sSLf --resolve one.one.one.one:8080:127.0.0.1 https://one.one.one.one:8080/ | grep '^\.\.'
 
 # Expected output:
 # ............................................................
@@ -155,7 +182,8 @@ See [LICENSE](LICENSE) for details.
 
 ## Original Project
 
-- **Repository:** https://github.com/patterniha/SNI-Spoofing
+- **Repository:** [https://github.com/patterniha/SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing)
 - **Author:** [@patterniha](https://github.com/patterniha)
 - **Language:** Python
 - **License:** GPL-3.0
+

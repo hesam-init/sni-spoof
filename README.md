@@ -6,7 +6,7 @@ Cross-platform: **Windows** (WinDivert) and **Linux/OpenWrt** (nfqueue + raw soc
 
 ## Credits & Acknowledgments
 
-This project is a complete port of the original **[SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing)** by **[@patterniha](https://github.com/patterniha)**. All credit for the original concept, algorithm, and DPI bypass technique goes to them. Thank you for creating and open-sourcing this tool. 🙏
+This project is a complete port of the original **[SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing)** by **[@patterniha](https://github.com/patterniha)**. All credit for the original concept, algorithm, and DPI bypass technique goes to them.
 
 This Go version maintains full compatibility with the original Python logic while adding:
 - Native concurrency with goroutines
@@ -33,16 +33,21 @@ This tool acts as a local TCP proxy that:
 
 ## Quick Start
 
-See **[BUILD.md](BUILD.md)** for detailed build instructions, all supported platforms, requirements, and usage guide.
-
 ### Build
 
 ```bash
-# Windows x64
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o sni-spoofing.exe -ldflags "-s -w" .
+go mod download
 
-# Linux ARM64 (OpenWrt / Cortex-A53)
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o sni-spoofing-linux-arm64 -ldflags "-s -w" .
+# all targets -> dist/
+make dist
+
+# or build one target:
+make linux-amd64
+make linux-arm64
+make windows
+
+# windows + WinDivert runtime next to exe
+make windows-bundle
 ```
 
 ### Configure
@@ -63,33 +68,83 @@ Create `config.json`:
 
 ```bash
 # Windows (as Administrator)
-.\sni-spoofing.exe
+# put config.json, WinDivert.dll, WinDivert64.sys next to the exe
+.\sni-spoofing.exe -config .\config.json
 
 # Linux/OpenWrt (as root)
-cd /etc/sni && sni
+sudo ./sni-spoofing-linux-amd64 -config ./config.json
 ```
 
-## Project Structure
+### Arguments
 
+You can configure the app in exactly **one** of these ways:
+
+- **Config file**: `-config <path>` (or `-c <path>`)
+- **Flags**: `-listen <host:port> -connect <ipv4:port> -fake-sni <hostname>`
+- **Default**: no args → loads `config.json` next to the binary (or from the current directory)
+
+Examples:
+
+```bash
+# file
+sudo ./sni-spoofing-linux-amd64 -config ./config.json
+
+# flags (all three required together)
+sudo ./sni-spoofing-linux-amd64 -listen 127.0.0.1:8080 -connect 188.114.98.0:443 -fake-sni auth.vercel.com
 ```
-SNI-Spoofing-Go/
-├── main.go                      # Entry point (platform-agnostic)
-├── dial_windows.go              # Windows dial helper
-├── dial_linux.go                # Linux dial helper
-├── config/config.go             # Config struct + JSON loader
-├── network/network.go           # Local interface IP detection
-├── packet/
-│   ├── templates.go             # TLS ClientHello builder
-│   ├── tcp.go                   # Raw TCP/IP header parser
-│   └── packet_test.go           # Unit tests
-├── connection/monitor.go        # Connection state tracking
-├── injection/
-│   ├── common.go                # Shared types
-│   ├── injector_windows.go      # WinDivert implementation
-│   └── injector_linux.go        # nfqueue + raw socket implementation
-├── config.json                  # Runtime configuration
-├── BUILD.md                     # Full build & usage guide
-└── LICENSE                      # GPL-3.0 (same as original)
+
+### Docker (prebuilt image)
+
+Prebuilt images are published to GitHub Container Registry:
+
+```bash
+docker run --rm -it \
+  --network host \
+  --cap-add NET_ADMIN --cap-add NET_RAW \
+  ghcr.io/aleskxyz/sni-spoofing-go:latest \
+  -listen 127.0.0.1:40443 \
+  -connect 188.114.98.0:443 \
+  -fake-sni auth.vercel.com
+```
+
+### Test (Cloudflare example)
+
+This is a plain TCP proxy (not an HTTP proxy).
+
+To make this method work in practice you usually need:
+- A **working upstream IP** you can reach on `:443` (set via `-connect IP:443`). In general this should be an IP that actually serves TLS for the hostname you’re testing, but depending on the network/DPI you may need to experiment.
+- A **working decoy SNI** (set via `-fake-sni`) that your DPI allows. This depends on your network/DPI and may require experimentation.
+
+Remember: the **real target SNI** comes from the client request (`Host`/URL), while `-fake-sni` is the **decoy SNI** that the DPI is intended to see.
+
+Use `curl` with `--resolve` so the TLS SNI/host stays the hostname you’re testing while connecting to your local listener.
+
+Example (ASCII-art PoC via `one.one.one.one`; decoy SNI = `auth.vercel.com`):
+
+```bash
+# Pick a real Cloudflare edge IP for the hostname you're testing:
+CF_IP="$(host auth.vercel.com | awk '/has address/ {print $4}' | head -n1)"
+
+sudo ./sni-spoofing-linux-amd64 \
+  -listen 127.0.0.1:8080 \
+  -connect "${CF_IP}:443" \
+  -fake-sni auth.vercel.com
+
+# PoC: fetch a real page through the local listener while keeping SNI/Host correct.
+curl -sSLf -H 'Host: one.one.one.one' --resolve one.one.one.one:8080:127.0.0.1 https://one.one.one.one:8080/ | grep '^\.\.'
+
+# Expected output:
+# ............................................................
+# .........1............1............1............1...........
+# ........11...........11...........11...........11...........
+# .......111..........111..........111..........111...........
+# ......1111.........1111.........1111.........1111...........
+# ........11...........11...........11...........11...........
+# ........11...........11...........11...........11...........
+# ........11...........11...........11...........11...........
+# ........11....ooo....11....ooo....11....ooo....11...........
+# ......111111..ooo..111111..ooo..111111..ooo..111111.........
+# ............................................................
 ```
 
 ## License

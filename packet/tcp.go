@@ -70,31 +70,49 @@ func tcpOffset(raw []byte) int {
 
 // IPv4SrcAddr returns the source IP address from an IPv4 packet.
 func IPv4SrcAddr(raw []byte) net.IP {
+	if len(raw) < 16 {
+		return nil
+	}
 	return net.IP(raw[12:16])
 }
 
 // IPv4DstAddr returns the destination IP address from an IPv4 packet.
 func IPv4DstAddr(raw []byte) net.IP {
+	if len(raw) < 20 {
+		return nil
+	}
 	return net.IP(raw[16:20])
 }
 
 // IPv4TotalLen returns the total length field from the IPv4 header.
 func IPv4TotalLen(raw []byte) uint16 {
+	if len(raw) < 4 {
+		return 0
+	}
 	return binary.BigEndian.Uint16(raw[2:4])
 }
 
 // SetIPv4TotalLen sets the total length field in the IPv4 header.
 func SetIPv4TotalLen(raw []byte, length uint16) {
+	if len(raw) < 4 {
+		return
+	}
 	binary.BigEndian.PutUint16(raw[2:4], length)
 }
 
 // IPv4Ident returns the identification field from the IPv4 header.
 func IPv4Ident(raw []byte) uint16 {
+	if len(raw) < 6 {
+		return 0
+	}
 	return binary.BigEndian.Uint16(raw[4:6])
 }
 
 // SetIPv4Ident sets the identification field in the IPv4 header.
 func SetIPv4Ident(raw []byte, ident uint16) {
+	if len(raw) < 6 {
+		return
+	}
 	binary.BigEndian.PutUint16(raw[4:6], ident)
 }
 
@@ -105,48 +123,72 @@ func SetIPv4Ident(raw []byte, ident uint16) {
 // TCPSrcPort returns the source port from the TCP header.
 func TCPSrcPort(raw []byte) uint16 {
 	off := tcpOffset(raw)
+	if len(raw) < off+4 {
+		return 0
+	}
 	return binary.BigEndian.Uint16(raw[off : off+2])
 }
 
 // TCPDstPort returns the destination port from the TCP header.
 func TCPDstPort(raw []byte) uint16 {
 	off := tcpOffset(raw)
+	if len(raw) < off+4 {
+		return 0
+	}
 	return binary.BigEndian.Uint16(raw[off+2 : off+4])
 }
 
 // TCPSeqNum returns the 32-bit sequence number.
 func TCPSeqNum(raw []byte) uint32 {
 	off := tcpOffset(raw)
+	if len(raw) < off+8 {
+		return 0
+	}
 	return binary.BigEndian.Uint32(raw[off+4 : off+8])
 }
 
 // SetTCPSeqNum sets the 32-bit sequence number.
 func SetTCPSeqNum(raw []byte, seq uint32) {
 	off := tcpOffset(raw)
+	if len(raw) < off+8 {
+		return
+	}
 	binary.BigEndian.PutUint32(raw[off+4:off+8], seq)
 }
 
 // TCPAckNum returns the 32-bit acknowledgement number.
 func TCPAckNum(raw []byte) uint32 {
 	off := tcpOffset(raw)
+	if len(raw) < off+12 {
+		return 0
+	}
 	return binary.BigEndian.Uint32(raw[off+8 : off+12])
 }
 
 // SetTCPAckNum sets the 32-bit acknowledgement number.
 func SetTCPAckNum(raw []byte, ack uint32) {
 	off := tcpOffset(raw)
+	if len(raw) < off+12 {
+		return
+	}
 	binary.BigEndian.PutUint32(raw[off+8:off+12], ack)
 }
 
 // TCPDataOffset returns the TCP header length in bytes (data offset field × 4).
 func TCPDataOffset(raw []byte) int {
 	off := tcpOffset(raw)
+	if len(raw) < off+13 {
+		return 0
+	}
 	return int(raw[off+12]>>4) * 4
 }
 
 // GetTCPFlags reads the TCP flags from the raw packet.
 func GetTCPFlags(raw []byte) TCPFlags {
 	off := tcpOffset(raw)
+	if len(raw) < off+14 {
+		return TCPFlags{}
+	}
 	// Flags are in bytes 12-13 of the TCP header.
 	// Byte 13 contains: CWR ECE URG ACK PSH RST SYN FIN
 	flags := raw[off+13]
@@ -163,6 +205,9 @@ func GetTCPFlags(raw []byte) TCPFlags {
 // SetTCPFlag sets or clears a specific TCP flag. Accepts flag name: "syn", "ack", "rst", "fin", "psh", "urg".
 func SetTCPFlag(raw []byte, flag string, value bool) {
 	off := tcpOffset(raw)
+	if len(raw) < off+14 {
+		return
+	}
 	var mask byte
 	switch flag {
 	case "fin":
@@ -207,10 +252,23 @@ func TCPPayloadLen(raw []byte) int {
 
 // SetTCPPayload replaces the TCP payload and updates the IP total length field.
 // Returns a new raw packet byte slice with the modified payload.
+// Returns nil if raw has invalid IPv4/TCP headers or truncated data.
 func SetTCPPayload(raw []byte, payload []byte) []byte {
+	if len(raw) < 20 {
+		return nil
+	}
 	ipHdrLen := IPHeaderLen(raw)
+	if ipHdrLen < 20 || ipHdrLen > 60 || len(raw) < ipHdrLen {
+		return nil
+	}
 	tcpHdrLen := TCPDataOffset(raw)
+	if tcpHdrLen < 20 || tcpHdrLen > 60 {
+		return nil
+	}
 	headerTotal := ipHdrLen + tcpHdrLen
+	if headerTotal > len(raw) || headerTotal < ipHdrLen+20 {
+		return nil
+	}
 
 	newRaw := make([]byte, headerTotal+len(payload))
 	copy(newRaw, raw[:headerTotal])

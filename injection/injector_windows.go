@@ -49,17 +49,21 @@ func (f *FakeTcpInjector) Start() {
 
 // Close stops the WinDivert handle.
 func (f *FakeTcpInjector) Close() {
-	f.wd.Close()
+	if f.wd != nil {
+		f.wd.Close()
+	}
 }
 
 // sendPacket re-injects a packet into the network stack.
-func (f *FakeTcpInjector) sendPacket(pkt *godivert.Packet, recalc bool) {
+func (f *FakeTcpInjector) sendPacket(pkt *godivert.Packet, recalc bool) error {
 	if recalc {
 		pkt.CalcNewChecksum(f.wd)
 	}
-	if _, err := f.wd.Send(pkt); err != nil {
+	_, err := f.wd.Send(pkt)
+	if err != nil {
 		log.Printf("WinDivert send error: %v", err)
 	}
+	return err
 }
 
 // fakeSendThread injects the fake ClientHello with a wrong sequence number.
@@ -75,12 +79,16 @@ func (f *FakeTcpInjector) fakeSendThread(rawCopy []byte, addr *godivert.WinDiver
 
 	packet.SetTCPFlag(rawCopy, "psh", true)
 	newRaw := packet.SetTCPPayload(rawCopy, conn.FakeData)
+	if newRaw == nil {
+		log.Printf("SetTCPPayload: invalid or truncated TCP/IP packet")
+		conn.AbortUnexpectedCloseLocked()
+		return
+	}
 
 	if conn.BypassMethod == "wrong_seq" {
 		payloadLen := uint32(len(conn.FakeData))
 		wrongSeq := (uint32(conn.SynSeq) + 1 - payloadLen) & 0xffffffff
 		packet.SetTCPSeqNum(newRaw, wrongSeq)
-		conn.FakeSent = true
 
 		if packet.IPVersion(newRaw) == 4 {
 			ident := packet.IPv4Ident(newRaw)
@@ -93,9 +101,14 @@ func (f *FakeTcpInjector) fakeSendThread(rawCopy []byte, addr *godivert.WinDiver
 			Addr:      &addrCopy,
 			PacketLen: uint(len(newRaw)),
 		}
-		f.sendPacket(fakePkt, true)
+		if err := f.sendPacket(fakePkt, true); err != nil {
+			conn.AbortUnexpectedCloseLocked()
+			return
+		}
+		conn.FakeSent = true
 	} else {
-		log.Fatalf("not implemented bypass method: %s", conn.BypassMethod)
+		log.Printf("not implemented bypass method: %s", conn.BypassMethod)
+		conn.AbortUnexpectedCloseLocked()
 	}
 }
 
@@ -161,6 +174,9 @@ func (f *FakeTcpInjector) onInboundPacket(pkt *godivert.Packet, conn *FakeInject
 			return
 		}
 		conn.Monitor = false
+		// Must reinject like every other WinDivert path; otherwise the ACK never reaches
+		// the local TCP stack (Linux uses NfAccept for the same packet).
+		f.sendPacket(pkt, false)
 		select {
 		case conn.T2aChan <- "fake_data_ack_recv":
 		default:
@@ -234,6 +250,12 @@ func (f *FakeTcpInjector) inject(pkt *godivert.Packet) {
 		return
 	}
 
+	// IPv4 only: pass through non-IPv4 packets unchanged.
+	if packet.IPVersion(raw) != 4 {
+		f.sendPacket(pkt, false)
+		return
+	}
+
 	srcIP := packet.IPv4SrcAddr(raw).String()
 	dstIP := packet.IPv4DstAddr(raw).String()
 	srcPort := packet.TCPSrcPort(raw)
@@ -274,6 +296,7 @@ func (f *FakeTcpInjector) inject(pkt *godivert.Packet) {
 		f.onOutboundPacket(pkt, conn)
 
 	} else {
-		log.Fatal("impossible packet direction!")
+		log.Printf("impossible WinDivert packet direction: %v", dir)
+		f.sendPacket(pkt, false)
 	}
 }

@@ -47,6 +47,7 @@ func NewFakeTcpInjector(interfaceIP, connectIP string, connectPort uint16) (*Fak
 		connectPort: connectPort,
 		ctx:         ctx,
 		cancel:      cancel,
+		rawFd:       -1,
 	}
 
 	// Create raw socket for injecting fake packets
@@ -157,7 +158,8 @@ func (f *FakeTcpInjector) Start() {
 		},
 	)
 	if err != nil {
-		log.Fatalf("nfqueue register error: %v", err)
+		log.Printf("nfqueue register error: %v", err)
+		return
 	}
 	<-f.ctx.Done()
 }
@@ -168,25 +170,53 @@ func (f *FakeTcpInjector) Close() {
 	if f.nf != nil {
 		f.nf.Close()
 	}
-	syscall.Close(f.rawFd)
+	if f.rawFd >= 0 {
+		syscall.Close(f.rawFd)
+		f.rawFd = -1
+	}
 	f.cleanupIptables()
 }
 
 // sendRawPacket sends a raw IP packet bypassing nfqueue (due to SO_MARK).
 func (f *FakeTcpInjector) sendRawPacket(rawIP []byte) error {
 	dstIP := packet.IPv4DstAddr(rawIP)
+	if dstIP == nil {
+		return fmt.Errorf("raw packet has no IPv4 destination")
+	}
+	ip4 := dstIP.To4()
+	if ip4 == nil {
+		return fmt.Errorf("raw packet destination is not IPv4")
+	}
 	sa := &syscall.SockaddrInet4{Port: 0}
-	copy(sa.Addr[:], dstIP.To4())
+	copy(sa.Addr[:], ip4)
 	return syscall.Sendto(f.rawFd, rawIP, 0, sa)
 }
 
 // processPacket handles a single nfqueue packet.
 func (f *FakeTcpInjector) processPacket(a nfqueue.Attribute) {
+	if a.PacketID == nil {
+		log.Printf("nfqueue: missing packet id (cannot issue verdict)")
+		return
+	}
 	id := *a.PacketID
+	if a.Payload == nil {
+		if err := f.nf.SetVerdict(id, nfqueue.NfAccept); err != nil {
+			log.Printf("nfqueue SetVerdict: %v", err)
+		}
+		return
+	}
 	payload := *a.Payload // raw IP packet
 
 	if len(payload) < 40 {
 		f.nf.SetVerdict(id, nfqueue.NfAccept)
+		return
+	}
+
+	// IPv4 only: do not interpret IPv6 (or non-IP) payloads as IPv4.
+	if packet.IPVersion(payload) != 4 {
+		if err := f.nf.SetVerdict(id, nfqueue.NfAccept); err != nil {
+			log.Printf("nfqueue SetVerdict: %v", err)
+		}
 		return
 	}
 
@@ -376,12 +406,16 @@ func (f *FakeTcpInjector) fakeSendThread(rawCopy []byte, conn *FakeInjectiveConn
 	// Build the fake packet from the captured ACK
 	packet.SetTCPFlag(rawCopy, "psh", true)
 	newRaw := packet.SetTCPPayload(rawCopy, conn.FakeData)
+	if newRaw == nil {
+		log.Printf("SetTCPPayload: invalid or truncated TCP/IP packet")
+		conn.AbortUnexpectedCloseLocked()
+		return
+	}
 
 	if conn.BypassMethod == "wrong_seq" {
 		payloadLen := uint32(len(conn.FakeData))
 		wrongSeq := (uint32(conn.SynSeq) + 1 - payloadLen) & 0xffffffff
 		packet.SetTCPSeqNum(newRaw, wrongSeq)
-		conn.FakeSent = true
 
 		if packet.IPVersion(newRaw) == 4 {
 			ident := packet.IPv4Ident(newRaw)
@@ -394,15 +428,22 @@ func (f *FakeTcpInjector) fakeSendThread(rawCopy []byte, conn *FakeInjectiveConn
 
 		if err := f.sendRawPacket(newRaw); err != nil {
 			log.Printf("raw socket send error: %v", err)
+			conn.AbortUnexpectedCloseLocked()
+			return
 		}
+		conn.FakeSent = true
 	} else {
-		log.Fatalf("not implemented bypass method: %s", conn.BypassMethod)
+		log.Printf("not implemented bypass method: %s", conn.BypassMethod)
+		conn.AbortUnexpectedCloseLocked()
 	}
 }
 
 // computeIPChecksum calculates and sets the IPv4 header checksum.
 func computeIPChecksum(raw []byte) {
 	ipHdrLen := packet.IPHeaderLen(raw)
+	if ipHdrLen < 20 || len(raw) < ipHdrLen {
+		return
+	}
 	// Zero out existing checksum
 	raw[10] = 0
 	raw[11] = 0
@@ -413,9 +454,18 @@ func computeIPChecksum(raw []byte) {
 // computeTCPChecksum calculates and sets the TCP checksum using the pseudo-header.
 func computeTCPChecksum(raw []byte) {
 	ipHdrLen := packet.IPHeaderLen(raw)
+	if ipHdrLen < 20 || len(raw) < ipHdrLen+20 {
+		return
+	}
 	srcIP := net.IP(raw[12:16]).To4()
 	dstIP := net.IP(raw[16:20]).To4()
+	if srcIP == nil || dstIP == nil {
+		return
+	}
 	tcpSegment := raw[ipHdrLen:]
+	if len(tcpSegment) < 20 {
+		return
+	}
 	tcpLen := len(tcpSegment)
 
 	// Zero out existing TCP checksum (at offset 16-17 of TCP header)

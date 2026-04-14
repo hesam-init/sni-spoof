@@ -2,6 +2,8 @@
 //
 // Cross-platform: Windows (WinDivert) and Linux/OpenWrt (nfqueue + raw socket).
 // Requires admin/root privileges.
+//
+// IPv4 only: CONNECT_IP, LISTEN_HOST, and all packet logic assume IPv4.
 package main
 
 import (
@@ -34,6 +36,15 @@ func main() {
 	}
 
 	fakeSNI := []byte(cfg.FakeSNI)
+	if len(fakeSNI) > packet.MaxFakeSNILen {
+		log.Fatalf("FAKE_SNI too long: max %d bytes, got %d", packet.MaxFakeSNILen, len(fakeSNI))
+	}
+	if !network.IsIPv4(cfg.ConnectIP) {
+		log.Fatalf("CONNECT_IP must be an IPv4 address (IPv6 is not supported): %q", cfg.ConnectIP)
+	}
+	if cfg.ListenHost != "" && !network.IsIPv4(cfg.ListenHost) {
+		log.Fatalf("LISTEN_HOST must be an IPv4 address or empty (IPv6 is not supported): %q", cfg.ListenHost)
+	}
 	interfaceIPv4 := network.GetDefaultInterfaceIPv4(cfg.ConnectIP)
 	if interfaceIPv4 == "" {
 		log.Fatal("Failed to detect local interface IPv4 address")
@@ -101,15 +112,29 @@ func handleConnection(
 	rnd := make([]byte, 32)
 	sessID := make([]byte, 32)
 	keyShare := make([]byte, 32)
-	rand.Read(rnd)
-	rand.Read(sessID)
-	rand.Read(keyShare)
+	if _, err := rand.Read(rnd); err != nil {
+		log.Printf("crypto/rand: %v", err)
+		incomingSock.Close()
+		return
+	}
+	if _, err := rand.Read(sessID); err != nil {
+		log.Printf("crypto/rand: %v", err)
+		incomingSock.Close()
+		return
+	}
+	if _, err := rand.Read(keyShare); err != nil {
+		log.Printf("crypto/rand: %v", err)
+		incomingSock.Close()
+		return
+	}
 
 	var fakeData []byte
 	if dataMode == "tls" {
 		fakeData = packet.GetClientHelloWith(rnd, sessID, fakeSNI, keyShare)
 	} else {
-		log.Fatal("impossible data mode!")
+		log.Printf("unsupported data mode %q", dataMode)
+		incomingSock.Close()
+		return
 	}
 
 	// dialOutgoing is platform-specific (dial_windows.go / dial_linux.go)
@@ -151,7 +176,14 @@ func handleConnection(
 			return
 		}
 		if msg != "fake_data_ack_recv" {
-			log.Fatalf("impossible t2a msg: %s", msg)
+			log.Printf("unexpected t2a msg: %q", msg)
+			conn.Mu.Lock()
+			conn.Monitor = false
+			conn.Mu.Unlock()
+			fakeInjector.Connections.Delete(key)
+			outgoingSock.Close()
+			incomingSock.Close()
+			return
 		}
 		// Success — fake ClientHello was injected, DPI saw the spoofed SNI
 	case <-time.After(2 * time.Second):

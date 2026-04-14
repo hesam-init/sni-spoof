@@ -38,3 +38,19 @@ func NewFakeInjectiveConnection(
 		PeerSock:          peerSock,
 	}
 }
+
+// AbortUnexpectedCloseLocked closes both sockets, clears monitoring, and notifies
+// T2aChan (best-effort). conn.Mu must already be held.
+func (conn *FakeInjectiveConnection) AbortUnexpectedCloseLocked() {
+	if conn.Sock != nil {
+		conn.Sock.Close()
+	}
+	if conn.PeerSock != nil {
+		conn.PeerSock.Close()
+	}
+	conn.Monitor = false
+	select {
+	case conn.T2aChan <- "unexpected_close":
+	default:
+	}
+}

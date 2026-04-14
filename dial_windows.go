@@ -34,7 +34,12 @@ func dialOutgoing(
 				syscall.SetsockoptInt(syscall.Handle(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1)
 
 				sa := &syscall.SockaddrInet4{Port: 0}
-				copy(sa.Addr[:], net.ParseIP(interfaceIPv4).To4())
+				ip4 := net.ParseIP(interfaceIPv4).To4()
+				if ip4 == nil {
+					bindErr = fmt.Errorf("local address is not IPv4: %q", interfaceIPv4)
+					return
+				}
+				copy(sa.Addr[:], ip4)
 				bindErr = syscall.Bind(syscall.Handle(fd), sa)
 				if bindErr != nil {
 					return
@@ -45,7 +50,12 @@ func dialOutgoing(
 					bindErr = gsErr
 					return
 				}
-				srcPort = uint16(localSA.(*syscall.SockaddrInet4).Port)
+				switch la := localSA.(type) {
+				case *syscall.SockaddrInet4:
+					srcPort = uint16(la.Port)
+				default:
+					bindErr = fmt.Errorf("getsockname: unexpected address type %T", localSA)
+				}
 			})
 			if bindErr != nil {
 				return bindErr

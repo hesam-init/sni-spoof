@@ -9,6 +9,10 @@ import (
 	"fmt"
 )
 
+// MaxFakeSNILen is the maximum length of FAKE_SNI (bytes) for the padded
+// ClientHello template. Longer names make padding negative and cannot be encoded.
+const MaxFakeSNILen = 219
+
 // ------------------------------------------------------------------
 // ClientHelloMaker
 // ------------------------------------------------------------------
@@ -48,8 +52,12 @@ func init() {
 // GetClientHelloWith builds a TLS ClientHello packet with the given random,
 // session ID, target SNI, and key share bytes.
 // rnd, sessID, and keyShare must each be exactly 32 bytes.
+// len(targetSNI) must not exceed MaxFakeSNILen.
 func GetClientHelloWith(rnd, sessID, targetSNI, keyShare []byte) []byte {
 	sniLen := len(targetSNI)
+	if sniLen > MaxFakeSNILen {
+		panic(fmt.Sprintf("packet: FAKE_SNI too long (%d bytes); max %d", sniLen, MaxFakeSNILen))
+	}
 
 	// Server Name extension: type(2) + ext_len(2) + list_len(2) + type(1) + name_len(2) + name
 	serverNameExt := make([]byte, 0, 2+2+1+2+sniLen)
@@ -91,9 +99,16 @@ func ParseClientHello(data []byte) (rnd, sessID []byte, sni string, keyShare []b
 	sessID = data[44:76]
 
 	sniLenField := binary.BigEndian.Uint16(data[125:127])
-	sni = string(data[127 : 127+sniLenField])
+	endSNI := 127 + int(sniLenField)
+	if sniLenField > 512 || endSNI > len(data) || endSNI < 127 {
+		return nil, nil, "", nil, fmt.Errorf("invalid SNI length %d for buffer len %d", sniLenField, len(data))
+	}
+	sni = string(data[127:endSNI])
 
 	ksInd := 262 + len(sni)
+	if ksInd+32 > len(data) {
+		return nil, nil, "", nil, fmt.Errorf("key_share slice out of bounds (ksInd=%d)", ksInd)
+	}
 	keyShare = data[ksInd : ksInd+32]
 
 	return rnd, sessID, sni, keyShare, nil

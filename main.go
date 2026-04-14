@@ -8,6 +8,7 @@ package main
 
 import (
 	"crypto/rand"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,8 +31,120 @@ const (
 	bypassMethod = "wrong_seq"
 )
 
+func usage() {
+	exe := os.Args[0]
+	w := os.Stderr
+	fmt.Fprintf(w, "SNI-Spoofing — fake TLS ClientHello (SNI) injection proxy. IPv4 only; run as Administrator / root.\n\n")
+	fmt.Fprintf(w, "Usage:\n")
+	fmt.Fprintf(w, "  %s [options]\n\n", exe)
+	fmt.Fprintf(w, "How to pass settings (pick one; do not combine with the others):\n\n")
+	fmt.Fprintf(w, "  [no extra flags]\n")
+	fmt.Fprintf(w, "      Load config.json from the directory of this program, or from the current\n")
+	fmt.Fprintf(w, "      working directory if that file is not next to the binary.\n\n")
+	fmt.Fprintf(w, "  -config <path>   or   -c <path>\n")
+	fmt.Fprintf(w, "      Load JSON from <path> (LISTEN_HOST, LISTEN_PORT, CONNECT_IP, CONNECT_PORT, FAKE_SNI).\n\n")
+	fmt.Fprintf(w, "  -listen, -connect, -fake-sni\n")
+	fmt.Fprintf(w, "      Supply all three (IPv4 only). Host in -listen may be omitted for all interfaces\n")
+	fmt.Fprintf(w, "      (e.g. -listen :8080 or -listen 0.0.0.0:8080).\n\n")
+	fmt.Fprintf(w, "Examples:\n")
+	fmt.Fprintf(w, "  %s\n", exe)
+	fmt.Fprintf(w, "  %s -config /etc/sni/config.json\n", exe)
+	fmt.Fprintf(w, "  %s -listen 127.0.0.1:8080 -connect 198.51.100.2:443 -fake-sni allowed.example.com\n\n", exe)
+	fmt.Fprintf(w, "Options:\n")
+	flag.PrintDefaults()
+}
+
+// configFromTriple builds config from three arguments: listen addr, upstream addr, fake SNI hostname.
+func configFromTriple(listenAddr, connectAddr, fakeSNI string) (*config.Config, error) {
+	listenHost, listenPortStr, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		return nil, fmt.Errorf("listen address %q: %w", listenAddr, err)
+	}
+	listenPort, err := strconv.Atoi(listenPortStr)
+	if err != nil || listenPort < 1 || listenPort > 65535 {
+		return nil, fmt.Errorf("invalid listen port in %q", listenAddr)
+	}
+	connectIP, connectPortStr, err := net.SplitHostPort(connectAddr)
+	if err != nil {
+		return nil, fmt.Errorf("connect address %q: %w", connectAddr, err)
+	}
+	connectPort, err := strconv.Atoi(connectPortStr)
+	if err != nil || connectPort < 1 || connectPort > 65535 {
+		return nil, fmt.Errorf("invalid connect port in %q", connectAddr)
+	}
+	if strings.TrimSpace(fakeSNI) == "" {
+		return nil, fmt.Errorf("FAKE_SNI must be non-empty")
+	}
+	if !network.IsIPv4(connectIP) {
+		return nil, fmt.Errorf("connect host must be IPv4, got %q", connectIP)
+	}
+	if listenHost != "" && !network.IsIPv4(listenHost) {
+		return nil, fmt.Errorf("listen host must be IPv4 or empty, got %q", listenHost)
+	}
+	return &config.Config{
+		ListenHost:  listenHost,
+		ListenPort:  listenPort,
+		ConnectIP:   connectIP,
+		ConnectPort: connectPort,
+		FakeSNI:     fakeSNI,
+	}, nil
+}
+
 func main() {
-	cfg, err := config.LoadConfig()
+	flag.Usage = usage
+	var configPath string
+	var optListen, optConnect, optFakeSNI string
+	flag.StringVar(&configPath, "config", "", "JSON configuration file (not with -listen/-connect/-fake-sni)")
+	flag.StringVar(&configPath, "c", "", "same as -config")
+	flag.StringVar(&optListen, "listen", "", "listen address host:port (use with -connect and -fake-sni)")
+	flag.StringVar(&optConnect, "connect", "", "upstream address IPv4:port (use with -listen and -fake-sni)")
+	flag.StringVar(&optFakeSNI, "fake-sni", "", "hostname for injected ClientHello SNI (use with -listen and -connect)")
+	flag.Parse()
+
+	configFromFlag := false
+	cliListen, cliConnect, cliFakeSNI := false, false, false
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "config", "c":
+			configFromFlag = true
+		case "listen":
+			cliListen = true
+		case "connect":
+			cliConnect = true
+		case "fake-sni":
+			cliFakeSNI = true
+		}
+	})
+
+	cliAny := cliListen || cliConnect || cliFakeSNI
+	cliAll := cliListen && cliConnect && cliFakeSNI
+
+	args := flag.Args()
+	if len(args) > 0 {
+		fmt.Fprintf(os.Stderr, "error: unexpected arguments (use -listen/-connect/-fake-sni instead of positionals): %q\n\n", args)
+		usage()
+		os.Exit(2)
+	}
+	if configFromFlag && cliAny {
+		log.Fatal("cannot combine -config/-c with -listen/-connect/-fake-sni")
+	}
+	if configFromFlag && strings.TrimSpace(configPath) == "" {
+		log.Fatal("empty path for -config/-c")
+	}
+	if cliAny && !cliAll {
+		log.Fatal("if using -listen, -connect, or -fake-sni, all three flags are required")
+	}
+
+	var cfg *config.Config
+	var err error
+	switch {
+	case configFromFlag:
+		cfg, err = config.LoadConfigFile(configPath)
+	case cliAll:
+		cfg, err = configFromTriple(optListen, optConnect, optFakeSNI)
+	default:
+		cfg, err = config.LoadConfig()
+	}
 	if err != nil {
 		log.Fatal("Failed to load config: ", err)
 	}

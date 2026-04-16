@@ -2,6 +2,8 @@
 /sni-spoofing
 /sni-spoofing.exe
 /dist/
+/v2raya
+./v2raya
 
 # Go build / test
 *.test

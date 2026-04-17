@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ====== CONFIG ======
 OUTPUT_DIR="v2ray-configs"
-REFINED_DIR="$OUTPUT_DIR/refined"
+REFINED_DIR="$OUTPUT_DIR"
 DEFAULT_INPUT="input.txt"
 
 # ====== FUNCTIONS ======
@@ -45,8 +45,9 @@ main() {
   validate_input "$input_file"
   ensure_dirs
 
-  output_file="$REFINED_DIR/$(basename "$input_file")"
 
+  output_file="$REFINED_DIR/refined-v2ray.txt"
+  
   refine_configs "$input_file" "$output_file"
 
   echo "✅ Refinement complete"

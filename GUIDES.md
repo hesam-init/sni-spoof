@@ -30,4 +30,4 @@ default: proxy
 **Tips** :
 
 - Reset dns resolvers like `dnsmasq` | `dnsproxy` after transparent proxy
-- Also set `1.1.1.1` dns as upstream
+- Set `1.1.1.1` | `8.8.8.8` dns as upstream

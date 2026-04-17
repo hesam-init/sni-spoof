@@ -25,3 +25,8 @@ default: proxy
 
 - Transparent Proxy/System Proxy Implementation -> `Tproxy`
 - Traffic Splitting Mode of Rule Port -> `RoutingA`
+- Prevent DNS Spoofing -> `Forward DNS Request`
+
+**Tips** :
+
+- Reset dns resolvers like `dnsmasq` | `dnsproxy` after transparent proxy

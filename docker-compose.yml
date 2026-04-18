@@ -36,6 +36,9 @@ services:
     command: -config /etc/sni/config.json
     ports:
       - "40443:40443"
+    dns:
+      - 178.22.122.101
+      - 185.51.200.1
     volumes:
       - $PWD/config.json:/etc/sni/config.json
 

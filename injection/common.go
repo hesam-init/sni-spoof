@@ -1,46 +1,54 @@
-// Package injection provides packet interception and fake TCP injection.
-// This file contains common types shared between Windows and Linux implementations.
 package injection
 
 import (
 	"net"
+	"sync/atomic"
+	"time"
+
 	"sni-spoofing-go/connection"
 )
 
-// ConnID is re-exported from the connection package for convenience.
 type ConnID = connection.ConnID
 
-// FakeInjectiveConnection extends MonitorConnection with the state needed
-// for fake TLS ClientHello injection. Shared between Windows and Linux.
 type FakeInjectiveConnection struct {
 	*connection.MonitorConnection
 
-	FakeData     []byte     // The fake TLS ClientHello bytes to inject
-	SchFakeSent  bool       // Whether the fake send has been scheduled
-	FakeSent     bool       // Whether the fake packet has actually been sent
-	T2aChan      chan string // Signalling channel for injection result
-	BypassMethod string     // "wrong_seq" — the DPI bypass strategy
-	PeerSock     net.Conn   // The incoming client connection (for cleanup on error)
+	FakeData      []byte
+	FakeSent      atomic.Bool
+	T2aChan       chan string
+	BypassMethod  string
+	PeerSock      net.Conn
+	FakeRepeat    int
+	FakeDelay     time.Duration
+	FragmentDelay time.Duration
+
+	// FakeInjectInProgress is set while wrong-seq fake ClientHello is being sent (async off the nfqueue/WinDivert recv path).
+	FakeInjectInProgress atomic.Bool
+	PostFakeAckObserved  atomic.Bool
 }
 
-// NewFakeInjectiveConnection creates a new FakeInjectiveConnection.
 func NewFakeInjectiveConnection(
 	sock net.Conn, srcIP, dstIP string, srcPort, dstPort uint16,
 	fakeData []byte, bypassMethod string, peerSock net.Conn,
+	fakeRepeat int,
+	fakeDelay, fragmentDelay time.Duration,
 ) *FakeInjectiveConnection {
+	if fakeRepeat < 1 {
+		fakeRepeat = 1
+	}
 	return &FakeInjectiveConnection{
 		MonitorConnection: connection.NewMonitorConnection(sock, srcIP, dstIP, srcPort, dstPort),
 		FakeData:          fakeData,
-		SchFakeSent:       false,
-		FakeSent:          false,
-		T2aChan:           make(chan string, 1),
-		BypassMethod:      bypassMethod,
-		PeerSock:          peerSock,
+		// Buffer 2 so a rare second signal (e.g. unexpected + ack) is not dropped before the proxy reads.
+		T2aChan:       make(chan string, 2),
+		BypassMethod:  bypassMethod,
+		PeerSock:      peerSock,
+		FakeRepeat:    fakeRepeat,
+		FakeDelay:     fakeDelay,
+		FragmentDelay: fragmentDelay,
 	}
 }
 
-// AbortUnexpectedCloseLocked closes both sockets, clears monitoring, and notifies
-// T2aChan (best-effort). conn.Mu must already be held.
 func (conn *FakeInjectiveConnection) AbortUnexpectedCloseLocked() {
 	if conn.Sock != nil {
 		conn.Sock.Close()
@@ -53,4 +61,10 @@ func (conn *FakeInjectiveConnection) AbortUnexpectedCloseLocked() {
 	case conn.T2aChan <- "unexpected_close":
 	default:
 	}
+}
+
+func (conn *FakeInjectiveConnection) IsMonitoring() bool {
+	conn.Mu.Lock()
+	defer conn.Mu.Unlock()
+	return conn.Monitor
 }

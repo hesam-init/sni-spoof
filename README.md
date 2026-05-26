@@ -1,18 +1,18 @@
 # SNI-Spoofing-Go
 
-A high-performance **Go implementation** of the [SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing) DPI bypass tool, originally written in Python by [@patterniha](https://github.com/patterniha).
+A **Go implementation** of the [SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing) DPI bypass tool, originally written in Python by [@patterniha](https://github.com/patterniha).
 
-Cross-platform: **Windows** (WinDivert) and **Linux/OpenWrt** (nfqueue + raw socket).
+Cross-platform: **Windows** with WinDivert, **Linux/OpenWrt** with nfqueue plus a raw socket, and **macOS** with a passive BPF tap plus link-layer injection.
 
 ## Credits & Acknowledgments
 
 This project is a complete port of the original **[SNI-Spoofing](https://github.com/patterniha/SNI-Spoofing)** by **[@patterniha](https://github.com/patterniha)**. All credit for the original concept, algorithm, and DPI bypass technique goes to them.
 
-This Go version maintains full compatibility with the original Python logic while adding:
+This Go version follows the original wrong-sequence fake ClientHello technique while adding:
 
 - Native concurrency with goroutines
-- Cross-compilation to any OS/architecture with a single command
-- Single static binary — no Python interpreter or pip dependencies needed
+- Cross-compilation for Windows and Linux targets
+- Single static binary; no Python interpreter or pip dependencies
 - Linux/OpenWrt support via nfqueue (the original is Windows-only)
 
 ## How it works
@@ -27,12 +27,11 @@ This tool acts as a local TCP proxy that:
 
 ## Platform Support
 
-
-| Platform          | Packet Interception | Fake Injection | Requirements                                |
-| ----------------- | ------------------- | -------------- | ------------------------------------------- |
-| **Windows**       | WinDivert driver    | WinDivert send | `WinDivert.dll` + `WinDivert64.sys`         |
-| **Linux/OpenWrt** | nfqueue (netfilter) | Raw socket     | `iptables`, `nfnetlink_queue` kernel module |
-
+| Platform          | Packet Interception   | Fake Injection      | Requirements                                |
+| ----------------- | --------------------- | ------------------- | ------------------------------------------- |
+| **Windows**       | WinDivert driver      | WinDivert send      | Run as Administrator; driver is embedded    |
+| **Linux/OpenWrt** | nfqueue (netfilter)   | Raw socket          | `iptables`, `nfnetlink_queue` kernel module |
+| **macOS**         | BPF tap (`/dev/bpf`)  | BPF link-layer write | Run with `sudo`; Ethernet/Wi-Fi or utun interface |
 
 ## Quick Start
 
@@ -48,53 +47,74 @@ make dist
 make linux-amd64
 make linux-arm64
 make windows
+make darwin-arm64   # macOS Apple Silicon
+make darwin-amd64   # macOS Intel
 
-# windows + WinDivert runtime next to exe
-make windows-bundle
+# or just build for the machine you are on:
+make build
 ```
 
-### Configure
+The macOS build is pure Go (`CGO_ENABLED=0`); it uses a passive BPF tap and link-layer
+injection, so no libpcap or kernel extension is required.
 
-Create `config.json`:
-
-```json
-{
-  "LISTEN_HOST": "0.0.0.0",
-  "LISTEN_PORT": 40443,
-  "CONNECT_IP": "188.114.98.0",
-  "CONNECT_PORT": 443,
-  "FAKE_SNI": "auth.vercel.com"
-}
-```
+The Windows binary embeds the WinDivert driver through the local `godivert` module. You do not need to ship `WinDivert.dll` or `WinDivert64.sys` beside `sni-spoofing.exe`.
 
 ### Run
 
+Configuration can come from CLI flags or an INI file. If `-config` is not provided, the app loads `./config.ini` when it exists. CLI flags override file values. `listen` and `connect` are required from either source; `fake-sni` is optional when `connect` uses a hostname, otherwise it is required because the connect target is only an IP address.
+
 ```bash
 # Windows (as Administrator)
-# put config.json, WinDivert.dll, WinDivert64.sys next to the exe
-.\sni-spoofing.exe -config .\config.json
+.\sni-spoofing.exe -listen 127.0.0.1:40443 -connect 104.19.229.21:443 -fake-sni hcaptcha.com -utls firefox
 
 # Linux/OpenWrt (as root)
-sudo ./sni-spoofing-linux-amd64 -config ./config.json
+sudo ./sni-spoofing-linux-amd64 -listen 127.0.0.1:40443 -connect 104.19.229.21:443 -fake-sni hcaptcha.com -utls firefox
+
+# macOS (with sudo; BPF requires root)
+sudo ./sni-spoofing -listen 127.0.0.1:40443 -connect 104.19.229.21:443 -fake-sni hcaptcha.com -utls firefox
 ```
 
-### Arguments
+Useful options:
 
-You can configure the app in exactly **one** of these ways:
+| Flag | Default | Meaning |
+| ---- | ------- | ------- |
+| `-config` | `./config.ini` if it exists | INI config file; CLI flags override file values |
+| `-test` | disabled | Run the built-in e2e test matrix for the selected `-connect`/`-fake-sni` pair, then exit |
+| `-fake-sni` | hostname from `-connect` | Decoy SNI used in the injected fake ClientHello |
+| `-fake-repeat` | `1` | Number of fake ClientHello injections |
+| `-fake-delay` | `2ms` | Delay after fake injection before forwarding real traffic |
+| `-ack-timeout` | `2s` | Max wait for the server response after fake injection |
+| `-utls` | `firefox` | TLS fingerprint preset; use `none` for the legacy fixed ClientHello template; run with `-h` to list all presets |
+| `-enable-fragment` | disabled | Split the real ClientHello after fake injection |
+| `-fragment-delay` | `500ms` | Delay between split real ClientHello writes |
+| `-sni-chunk` | `3` | SNI bytes per write when `-enable-fragment` is set; `0` means the whole hostname; for `hcaptcha.com`, `3` writes `hca`, `ptc`, `ha.`, `com` |
 
-- **Config file**: `-config <path>` (or `-c <path>`)
-- **Flags**: `-listen <host:port> -connect <ipv4:port> -fake-sni <hostname>`
-- **Default**: no args → loads `config.json` next to the binary (or from the current directory)
+Example config:
 
-Examples:
+```ini
+listen = 127.0.0.1:40443
+connect = 104.19.229.21:443
+fake-sni = hcaptcha.com
+utls = firefox
+fake-repeat = 1
+fake-delay = 2ms
+ack-timeout = 2s
+enable-fragment = false
+fragment-delay = 500ms
+sni-chunk = 3
+```
+
+The repository includes `config.example.ini`; copy it to `config.ini` to use the automatic default config loading.
+
+Method test:
 
 ```bash
-# file
-sudo ./sni-spoofing-linux-amd64 -config ./config.json
-
-# flags (all three required together)
-sudo ./sni-spoofing-linux-amd64 -listen 127.0.0.1:8080 -connect 188.114.98.0:443 -fake-sni auth.vercel.com
+./sni-spoofing-linux-amd64 -test -connect 104.19.229.21:443 -fake-sni hcaptcha.com
 ```
+
+`-test` first runs a preflight check for the selected upstream IP and fake SNI. The preflight confirms that the upstream path is reachable and compares the network-visible IPs used by the test; if the upstream path is unreachable or the known IPs differ, the method is not expected to work for that pair.
+
+After preflight, it runs an e2e matrix through the local tunnel. The matrix tries the supported TLS fingerprints with one or two fake injections, both with and without real ClientHello fragmentation. `PASS` means the local tunnel completed a real HTTPS request; `FAIL` means that combination did not work in the current network conditions. If every case fails, try a different upstream IP or fake SNI. If only some cases pass, use one of the passing combinations for normal runs.
 
 ### Docker (prebuilt image)
 
@@ -106,8 +126,9 @@ docker run --rm -it \
   --cap-add NET_ADMIN --cap-add NET_RAW \
   ghcr.io/aleskxyz/sni-spoofing-go:latest \
   -listen 127.0.0.1:40443 \
-  -connect 188.114.98.0:443 \
-  -fake-sni auth.vercel.com
+  -connect 104.19.229.21:443 \
+  -fake-sni hcaptcha.com \
+  -utls firefox
 ```
 
 #### For Iranian users
@@ -129,36 +150,35 @@ podman run --rm -it \
   --cap-add NET_ADMIN --cap-add NET_RAW \
   ghcr.hamdocker.ir/aleskxyz/sni-spoofing-go:latest \
   -listen 127.0.0.1:40443 \
-  -connect 188.114.98.0:443 \
-  -fake-sni auth.vercel.com
+  -connect 104.19.229.21:443 \
+  -fake-sni hcaptcha.com \
+  -utls firefox
 ```
 
 ### Test (Cloudflare example)
 
-This is a plain TCP proxy (not an HTTP proxy).
+This is a plain TCP proxy. It is not a SOCKS or HTTP proxy.
 
 To make this method work in practice you usually need:
 
-- A **working upstream IP** you can reach on `:443` (set via `-connect IP:443`). In general this should be an IP that actually serves TLS for the hostname you’re testing, but depending on the network/DPI you may need to experiment.
+- A **working upstream IP** you can reach on `:443` (set via `-connect IP:443`). In general this should be an IP that actually serves TLS for the hostname you are testing, but depending on the network/DPI you may need to experiment.
 - A **working decoy SNI** (set via `-fake-sni`) that your DPI allows. This depends on your network/DPI and may require experimentation.
 
 Remember: the **real target SNI** comes from the client request (`Host`/URL), while `-fake-sni` is the **decoy SNI** that the DPI is intended to see.
 
 Use `curl` with `--resolve` so the TLS SNI/host stays the hostname you’re testing while connecting to your local listener.
 
-Example (ASCII-art PoC via `one.one.one.one`; decoy SNI = `auth.vercel.com`):
+Example (ASCII-art PoC via `one.one.one.one`; decoy SNI = `hcaptcha.com`):
 
 ```bash
-# Pick a real Cloudflare edge IP for the hostname you're testing:
-CF_IP="$(host auth.vercel.com | awk '/has address/ {print $4}' | head -n1)"
-
 sudo ./sni-spoofing-linux-amd64 \
-  -listen 127.0.0.1:8080 \
-  -connect "${CF_IP}:443" \
-  -fake-sni auth.vercel.com
+  -listen 127.0.0.1:40443 \
+  -connect 104.19.229.21:443 \
+  -fake-sni hcaptcha.com \
+  -utls firefox
 
 # PoC: fetch a real page through the local listener while keeping SNI/Host correct.
-curl -sSLf --resolve one.one.one.one:8080:127.0.0.1 https://one.one.one.one:8080/ | grep '^\.\.'
+curl -sSLf --resolve one.one.one.one:40443:127.0.0.1 https://one.one.one.one:40443/ | grep '^\.\.'
 
 # Expected output:
 # ............................................................
@@ -186,4 +206,3 @@ See [LICENSE](LICENSE) for details.
 - **Author:** [@patterniha](https://github.com/patterniha)
 - **Language:** Python
 - **License:** GPL-3.0
-

@@ -1,8 +1,7 @@
-# syntax=docker/dockerfile:1
-
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM docker.arvancloud.ir/golang:1.25-alpine AS build
 WORKDIR /src
 
+ENV GOPROXY=https://mirror-go.runflare.com
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -18,7 +17,7 @@ RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -o /out/sni-spoofing \
     .
 
-FROM alpine:3.21
+FROM docker.arvancloud.ir/alpine:3.21
 RUN apk add --no-cache ca-certificates iptables
 
 COPY --from=build /out/sni-spoofing /usr/local/bin/sni-spoofing

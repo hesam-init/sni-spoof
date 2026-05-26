@@ -20,6 +20,7 @@ services:
     build:
       context: ${PWD}
       dockerfile: Dockerfile.alpine
+      # network: host
       # extra_hosts:
       #   - "host.docker.internal:host-gateway"
       # args:
@@ -33,14 +34,14 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    command: -config /etc/sni/config.json
+    command: -config /etc/sni/config.ini
     ports:
       - "40443:40443"
-    dns:
-      - 178.22.122.101
-      - 185.51.200.1
+    # dns:
+    #   - 178.22.122.101
+    #   - 185.51.200.1
     volumes:
-      - $PWD/config.json:/etc/sni/config.json
+      - $PWD/config.example.ini:/etc/sni/config.ini
 
   v2raya:
     image: mzz2017/v2raya:v2.2.7.5

@@ -28,18 +28,19 @@ services:
       #   HTTPS_PROXY: socks5://host.docker.internal:20170
       #   HTTP_PROXY: socks5://host.docker.internal:20170
     image: sni-spoof:latest
+    # dns:
+    #   - 178.22.122.101
+    #   - 185.51.200.1
     container_name: sni-spoof
     logging: *logging-default
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
       - NET_RAW
-    command: -config /etc/sni/config.ini
+    # command: -config /etc/sni/config.ini
+    command: -listen 0.0.0.0:40443 -connect 104.19.229.21:443 -fake-sni hcaptcha.com -utls firefox
     ports:
       - "127.0.0.1:40443:40443"
-    # dns:
-    #   - 178.22.122.101
-    #   - 185.51.200.1
     volumes:
       - $PWD/config.example.ini:/etc/sni/config.ini
 

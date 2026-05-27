@@ -20,7 +20,7 @@ services:
     build:
       context: ${PWD}
       dockerfile: Dockerfile.alpine
-      # network: host
+      network: host
       # extra_hosts:
       #   - "host.docker.internal:host-gateway"
       # args:
@@ -36,7 +36,7 @@ services:
       - NET_RAW
     command: -config /etc/sni/config.ini
     ports:
-      - "40443:40443"
+      - "127.0.0.1:40443:40443"
     # dns:
     #   - 178.22.122.101
     #   - 185.51.200.1

@@ -108,11 +108,13 @@ sudo ./sni-spoofing-linux-amd64 \
   -utls firefox
 ```
 
-Run the proxy on Windows:
+Run the proxy on Windows (amd64):
 
 ```powershell
-.\sni-spoofing.exe -listen 127.0.0.1:40443 -connect 104.19.229.21:443 -fake-sni hcaptcha.com -utls firefox
+.\sni-spoofing-windows-amd64.exe -listen 127.0.0.1:40443 -connect 104.19.229.21:443 -fake-sni hcaptcha.com -utls firefox
 ```
+
+On Windows arm64, use `sni-spoofing-windows-arm64.exe` (same flags). Use the WinDivert DLL that matches your binary architecture.
 
 Run with passive injector mode:
 
@@ -222,7 +224,7 @@ Expected output:
 |----------|-------|
 | Linux/OpenWrt | Requires root. Uses nfqueue + raw socket by default. |
 | macOS | Requires sudo. Uses BPF tap and passive injection. |
-| Windows | Requires Administrator. Uses WinDivert. |
+| Windows | Requires Administrator. Uses WinDivert. CLI: `sni-spoofing-windows-amd64.exe`, `sni-spoofing-windows-arm64.exe`. |
 
 ### OpenWrt setup for active injector mode
 
@@ -233,18 +235,55 @@ apk update
 apk install iptables-mod-nfqueue kmod-nfnetlink-queue
 ```
 
-## Build
+## GUI (experimental)
+
+Desktop app ([Wails](https://wails.io) + Svelte) in [gui/](gui/) — English/Persian UI, same proxy core as the CLI. Separate `gui/go.mod` keeps Wails out of the CLI build.
 
 ```bash
-go mod download
-make build
+make deps-linux    # Linux: GTK + WebKit (once)
+make gui           # this machine → dist/
+make gui-dist      # all GUI targets for this host
 ```
 
-Build all release targets:
+Go 1.25+, Node 20.19+. Same root/admin privileges as the CLI. `make gui*` installs Wails to `$(go env GOPATH)/bin/wails`. Linux release builds need `-tags webkit2_41` (Ubuntu 24.04+, Debian 13). `gui-linux-arm64` needs an arm64 host, not x86 cross-compile.
+
+### GUI development (live reload)
+
+From `gui/` after `make install-wails` (or any `make gui*`):
 
 ```bash
-make dist
+cd gui
+$(go env GOPATH)/bin/wails dev
 ```
+
+Wails runs the Vite dev server and reloads the UI on frontend changes. Add `$(go env GOPATH)/bin` to `PATH` if you want to type `wails` directly.
+
+**Linux:** install deps with `make deps-linux` first. If `wails dev` fails on WebKitGTK 4.1-only distros, use `wails dev -tags webkit2_41`.
+
+**Windows:** `build/windows/wails.exe.manifest` requires Administrator — start an elevated terminal before `wails dev`, or WinDivert-related startup fails with `requires elevation`. For UI-only work you may temporarily comment out the `<trustInfo>` block in that manifest; restore it before release builds.
+
+**macOS:** install Xcode Command Line Tools ([Wails docs](https://wails.io/docs/gettingstarted/installation)).
+
+## Building
+
+| Location | Contents |
+|----------|----------|
+| `dist/` | Release binaries |
+| `.build/` | Local dev CLI; npm/Wails scratch |
+
+```bash
+make build            # .build/sni-spoofing
+make dist             # CLI → dist/
+make gui-dist         # GUI → dist/ (host-dependent set)
+make dist-checksums   # after dist + gui-dist if you want GUI in SHA256SUMS too
+make clean
+```
+
+**CLI** (`make dist`): `sni-spoofing-windows-amd64.exe`, `sni-spoofing-windows-arm64.exe`, `sni-spoofing-linux-*`, `sni-spoofing-darwin-*` — via `make windows-amd64`, `windows-arm64`, `linux-amd64`, `linux-arm64`, `linux-armv7`, `linux-mipsle`, `linux-mips`, `darwin-amd64`, `darwin-arm64`
+
+**GUI** (`dist/`): `sni-spoofing-gui-linux-amd64`, `sni-spoofing-gui-linux-arm64`, `sni-spoofing-gui-windows-amd64.exe`, `sni-spoofing-gui-windows-arm64.exe`, `sni-spoofing-gui-darwin-universal.zip` — via `make gui-linux-amd64`, `gui-linux-arm64`, `gui-windows-amd64`, `gui-windows-arm64`, `gui-darwin-universal`.
+
+Put `config.ini` next to the binary you run, not in `dist/`. Run `make help` for all targets.
 
 ## License
 

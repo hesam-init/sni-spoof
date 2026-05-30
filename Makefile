@@ -23,6 +23,17 @@ ifeq ($(UNAME_S),Linux)
 WAILS_NATIVE_EXTRA := $(WAILS_LINUX_TAGS)
 endif
 
+# Release CLI paths (CI: make -s cli-asset-<platform>)
+CLI_ASSET_WINDOWS_AMD64 := $(DIST)/sni-spoofing-windows-amd64.exe
+CLI_ASSET_WINDOWS_ARM64 := $(DIST)/sni-spoofing-windows-arm64.exe
+CLI_ASSET_LINUX_AMD64 := $(DIST)/sni-spoofing-linux-amd64
+CLI_ASSET_LINUX_ARM64 := $(DIST)/sni-spoofing-linux-arm64
+CLI_ASSET_LINUX_ARMV7 := $(DIST)/sni-spoofing-linux-armv7
+CLI_ASSET_LINUX_MIPSLE := $(DIST)/sni-spoofing-linux-mipsle
+CLI_ASSET_LINUX_MIPS := $(DIST)/sni-spoofing-linux-mips
+CLI_ASSET_DARWIN_AMD64 := $(DIST)/sni-spoofing-darwin-amd64
+CLI_ASSET_DARWIN_ARM64 := $(DIST)/sni-spoofing-darwin-arm64
+
 # Release GUI paths (CI: make -s gui-asset-<platform>)
 GUI_ASSET_LINUX_AMD64 := $(DIST)/sni-spoofing-gui-linux-amd64
 GUI_ASSET_LINUX_ARM64 := $(DIST)/sni-spoofing-gui-linux-arm64
@@ -36,6 +47,10 @@ GUI_ASSET_DARWIN := $(DIST)/sni-spoofing-gui-darwin-universal.zip
 	install-wails deps-linux gui-frontend \
 	gui gui-windows-amd64 gui-windows-arm64 gui-linux-amd64 gui-linux-arm64 \
 	gui-darwin-universal gui-dist \
+	cli-asset-windows-amd64 cli-asset-windows-arm64 \
+	cli-asset-linux-amd64 cli-asset-linux-arm64 cli-asset-linux-armv7 \
+	cli-asset-linux-mipsle cli-asset-linux-mips \
+	cli-asset-darwin-amd64 cli-asset-darwin-arm64 \
 	gui-asset-linux-amd64 gui-asset-linux-arm64 \
 	gui-asset-windows-amd64 gui-asset-windows-arm64 gui-asset-darwin-universal
 
@@ -143,6 +158,33 @@ dist all: windows-amd64 windows-arm64 linux-amd64 linux-arm64 linux-armv7 linux-
 
 dist-checksums:
 	@cd $(DIST) && (ls -A 2>/dev/null | grep -v '^SHA256SUMS$$' | xargs -r sha256sum) > SHA256SUMS
+
+cli-asset-windows-amd64:
+	@echo $(CLI_ASSET_WINDOWS_AMD64)
+
+cli-asset-windows-arm64:
+	@echo $(CLI_ASSET_WINDOWS_ARM64)
+
+cli-asset-linux-amd64:
+	@echo $(CLI_ASSET_LINUX_AMD64)
+
+cli-asset-linux-arm64:
+	@echo $(CLI_ASSET_LINUX_ARM64)
+
+cli-asset-linux-armv7:
+	@echo $(CLI_ASSET_LINUX_ARMV7)
+
+cli-asset-linux-mipsle:
+	@echo $(CLI_ASSET_LINUX_MIPSLE)
+
+cli-asset-linux-mips:
+	@echo $(CLI_ASSET_LINUX_MIPS)
+
+cli-asset-darwin-amd64:
+	@echo $(CLI_ASSET_DARWIN_AMD64)
+
+cli-asset-darwin-arm64:
+	@echo $(CLI_ASSET_DARWIN_ARM64)
 
 # --- GUI (Wails); scratch in $(GUI_WAILS_OUT)/, release copies in $(DIST)/ ---
 

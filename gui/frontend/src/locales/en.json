@@ -38,8 +38,13 @@
     "title": "Logs",
     "empty": "No logs yet"
   },
+  "panel": {
+    "tab_logs": "Logs",
+    "tab_results": "Test results"
+  },
   "test": {
     "title": "Test results",
+    "empty": "Run the test matrix to see results here.",
     "col_utls": "uTLS",
     "col_repeat": "Repeat",
     "col_fragment": "Fragment",

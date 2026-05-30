@@ -537,7 +537,8 @@ func (a *App) RunTest(cfg ProxyConfig) (TestSummary, error) {
 	if _, err := proxy.RunMethodMatrix(testCtx, pc, opts.Injector, progress); err != nil {
 		if errors.Is(err, context.Canceled) {
 			a.emitLog("warn", "test matrix cancelled")
-			return summary, err
+			// Return partial summary without an error so the UI keeps completed rows.
+			return summary, nil
 		}
 		return summary, err
 	}

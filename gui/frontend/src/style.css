@@ -52,6 +52,15 @@ select {
   font-size: inherit;
 }
 
+/* Config values (hosts, ports, presets) are LTR even in Persian UI. */
+html[dir="rtl"] input[type="text"],
+html[dir="rtl"] input[type="number"],
+html[dir="rtl"] select {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}
+
 /* Logical properties so the layout flips with `dir` automatically. */
 .row {
   display: flex;

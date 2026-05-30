@@ -31,6 +31,7 @@
   let testResults: TestResult[] = [];
   let testSummary: TestSummary | null = null;
   let busy = false;
+  let rightPanelTab: "logs" | "results" = "logs";
 
   function pushLog(entry: Omit<LogEntry, "id">) {
     logs = appendLog(logs, entry);
@@ -64,6 +65,26 @@
     pushLog({ ts: Date.now(), level: "error", message: msg });
   }
 
+  function isTestCancelled(err: unknown): boolean {
+    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+    return msg.includes("cancel");
+  }
+
+  function partialSummaryFromResults(results: TestResult[]): TestSummary {
+    let passed = 0;
+    let failed = 0;
+    for (const r of results) {
+      if (r.pass) passed++;
+      else failed++;
+    }
+    return {
+      preflight: testSummary?.preflight ?? {},
+      results,
+      passed,
+      failed,
+    };
+  }
+
   async function onStart() {
     if (!cfg) return;
     busy = true;
@@ -95,6 +116,7 @@
     // than holding the old table on screen until RunTest resolves.
     testResults = [];
     testSummary = null;
+    rightPanelTab = "results";
     try {
       testSummary = await RunTest(cfg);
       // If the event stream missed anything (e.g. listener attached late),
@@ -103,9 +125,13 @@
         testResults = testSummary.results;
       }
     } catch (err) {
-      pushError(err);
-      testSummary = null;
-      testResults = [];
+      if (isTestCancelled(err) && testResults.length > 0) {
+        testSummary = partialSummaryFromResults(testResults);
+      } else {
+        pushError(err);
+        testSummary = null;
+        testResults = [];
+      }
     } finally {
       busy = false;
     }
@@ -121,16 +147,14 @@
     logs = [];
   }
 
-  // Reactive: rebuild the formatter whenever the active i18n locale changes
-  // so log timestamps follow the same locale as the rest of the UI (Persian
-  // digits in fa mode, etc.).
-  $: timeFormatter = new Intl.DateTimeFormat($locale || "en", {
+  // Log timestamps stay Western/LTR even when the UI is Persian (RTL).
+  const logTimeFormatter = new Intl.DateTimeFormat("en", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
   });
   function formatTime(ts: number): string {
-    return timeFormatter.format(new Date(ts));
+    return logTimeFormatter.format(new Date(ts));
   }
 
   // Auto-scroll the log panel will be re-added with a Svelte 5-correct
@@ -280,62 +304,96 @@
     {/if}
   </section>
 
-  <section class="panel logs">
+  <section class="panel side-panel">
     <div class="panel-header">
-      <div class="section-title compact">{$_("logs.title")}</div>
-      <button class="btn-link" on:click={clearLogs}>{$_("actions.clear_logs")}</button>
-    </div>
-    <div class="log-list">
-      {#if logs.length === 0}
-        <div class="empty">{$_("logs.empty")}</div>
-      {:else}
-        {#each logs as line (line.id)}
-          <div class="log-line log-{line.level}">
-            <span class="log-time">{formatTime(line.ts)}</span>
-            <span class="log-msg">{line.message}</span>
-          </div>
-        {/each}
+      <div class="tab-bar" role="tablist" aria-label={$_("logs.title")}>
+        <button
+          type="button"
+          class="tab"
+          class:active={rightPanelTab === "logs"}
+          role="tab"
+          aria-selected={rightPanelTab === "logs"}
+          on:click={() => (rightPanelTab = "logs")}
+        >
+          {$_("panel.tab_logs")}
+        </button>
+        <button
+          type="button"
+          class="tab"
+          class:active={rightPanelTab === "results"}
+          role="tab"
+          aria-selected={rightPanelTab === "results"}
+          on:click={() => (rightPanelTab = "results")}
+        >
+          {$_("panel.tab_results")}
+          {#if testResults.length > 0}
+            <span class="tab-badge">{testResults.length}</span>
+          {/if}
+        </button>
+      </div>
+      {#if rightPanelTab === "logs"}
+        <button class="btn-link" on:click={clearLogs}>{$_("actions.clear_logs")}</button>
       {/if}
     </div>
 
-    {#if testSummary}
-      <div class="section-title compact spaced">{$_("test.title")}</div>
-      <div class="test-preflight">
-        {#if testSummary.preflight.externalIp}
-          <span>{$_("test.external_ip")}: {testSummary.preflight.externalIp}</span>
-        {/if}
-        {#if testSummary.preflight.internalIp}
-          <span>{$_("test.internal_ip")}: {testSummary.preflight.internalIp}</span>
-        {/if}
-        {#if testSummary.preflight.warning}
-          <span class="test-preflight-note">{testSummary.preflight.warning}</span>
-        {/if}
-        <span class="test-summary-counts">
-          {$_("test.pass")}: {testSummary.passed} / {$_("test.fail")}: {testSummary.failed}
-        </span>
-      </div>
-      <table class="test-table">
-        <thead>
-          <tr>
-            <th>{$_("test.col_utls")}</th>
-            <th>{$_("test.col_repeat")}</th>
-            <th>{$_("test.col_fragment")}</th>
-            <th>{$_("test.col_result")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each testResults as r}
-            <tr>
-              <td>{r.utls}</td>
-              <td>{r.fakeRepeat}</td>
-              <td>{r.enableFragment ? $_("test.on") : $_("test.off")}</td>
-              <td class:pass={r.pass} class:fail={!r.pass}>
-                {r.pass ? $_("test.pass") : $_("test.fail")}
-              </td>
-            </tr>
+    {#if rightPanelTab === "logs"}
+      <div class="tab-panel log-list" role="tabpanel" dir="ltr">
+        {#if logs.length === 0}
+          <div class="empty">{$_("logs.empty")}</div>
+        {:else}
+          {#each logs as line (line.id)}
+            <div class="log-line log-{line.level}">
+              <span class="log-time">{formatTime(line.ts)}</span>
+              <span class="log-msg">{line.message}</span>
+            </div>
           {/each}
-        </tbody>
-      </table>
+        {/if}
+      </div>
+    {:else}
+      <div class="tab-panel test-results" role="tabpanel">
+        {#if testSummary}
+          <div class="test-preflight">
+            {#if testSummary.preflight.externalIp}
+              <span>{$_("test.external_ip")}: {testSummary.preflight.externalIp}</span>
+            {/if}
+            {#if testSummary.preflight.internalIp}
+              <span>{$_("test.internal_ip")}: {testSummary.preflight.internalIp}</span>
+            {/if}
+            {#if testSummary.preflight.warning}
+              <span class="test-preflight-note">{testSummary.preflight.warning}</span>
+            {/if}
+            <span class="test-summary-counts">
+              {$_("test.pass")}: {testSummary.passed} / {$_("test.fail")}: {testSummary.failed}
+            </span>
+          </div>
+        {/if}
+        {#if testResults.length === 0}
+          <div class="empty">{$_("test.empty")}</div>
+        {:else}
+          <table class="test-table">
+            <thead>
+              <tr>
+                <th>{$_("test.col_utls")}</th>
+                <th>{$_("test.col_repeat")}</th>
+                <th>{$_("test.col_fragment")}</th>
+                <th>{$_("test.col_result")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each testResults as r}
+                <tr>
+                  <td>{r.utls}</td>
+                  <td>{r.fakeRepeat}</td>
+                  <td>{r.enableFragment ? $_("test.on") : $_("test.off")}</td>
+                  <td class:pass={r.pass} class:fail={!r.pass}>
+                    {r.pass ? $_("test.pass") : $_("test.fail")}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
     {/if}
   </section>
 </main>
@@ -424,7 +482,7 @@
     padding: 18px;
     overflow: auto;
   }
-  .panel.logs {
+  .panel.side-panel {
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -434,7 +492,57 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     margin-block-end: 8px;
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    padding-inline: 12px;
+    padding-block: 6px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .tab:hover {
+    color: var(--text);
+    background: var(--panel-2);
+  }
+  .tab.active {
+    color: var(--text);
+    background: var(--panel-2);
+    border-color: var(--border);
+  }
+  .tab-badge {
+    min-width: 18px;
+    padding-inline: 5px;
+    border-radius: 999px;
+    background: var(--accent-strong);
+    color: white;
+    font-size: 10px;
+    line-height: 16px;
+    text-align: center;
+  }
+
+  .tab-panel {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .test-results {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px;
   }
 
   .section-title {
@@ -535,15 +643,17 @@
   }
 
   .log-list {
-    flex: 1;
-    overflow-y: auto;
+    direction: ltr;
+    text-align: left;
+    unicode-bidi: isolate;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 8px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
-      monospace;
+      "Courier New", monospace;
     font-size: 12px;
+    font-feature-settings: normal;
   }
   .empty {
     color: var(--muted);
@@ -552,6 +662,7 @@
   }
   .log-line {
     display: flex;
+    flex-direction: row;
     gap: 10px;
     padding-block: 2px;
   }

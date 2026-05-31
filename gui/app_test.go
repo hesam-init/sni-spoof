@@ -3,12 +3,14 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"sni-spoofing-go/guiapi"
 )
 
 func validConfig() ProxyConfig {
 	return ProxyConfig{
 		Listen:          "127.0.0.1:40443",
-		Connect:         "example.com:443",
+		Connect:         "1.1.1.1:443",
 		FakeSNI:         "hcaptcha.com",
 		UTLS:            "firefox",
 		Injector:        "active",
@@ -22,7 +24,7 @@ func validConfig() ProxyConfig {
 }
 
 func TestValidateConfig_AcceptsDefault(t *testing.T) {
-	if err := validateConfig(validConfig()); err != nil {
+	if err := guiapi.ValidateConfig(validConfig()); err != nil {
 		t.Fatalf("expected default config to pass, got: %v", err)
 	}
 }
@@ -37,16 +39,16 @@ func TestValidateConfig_Rejects(t *testing.T) {
 		{"blank connect", func(c *ProxyConfig) { c.Connect = "" }, "connect"},
 		{"fake-repeat zero", func(c *ProxyConfig) { c.FakeRepeat = 0 }, "fake-repeat"},
 		{"fake-repeat negative", func(c *ProxyConfig) { c.FakeRepeat = -1 }, "fake-repeat"},
-		{"fake-repeat too large", func(c *ProxyConfig) { c.FakeRepeat = maxFakeRepeat + 1 }, "fake-repeat"},
+		{"fake-repeat too large", func(c *ProxyConfig) { c.FakeRepeat = guiapi.MaxFakeRepeat + 1 }, "fake-repeat"},
 		{"sni-chunk negative", func(c *ProxyConfig) { c.SNIChunk = -1 }, "sni-chunk"},
-		{"sni-chunk too large", func(c *ProxyConfig) { c.SNIChunk = maxSNIChunk + 1 }, "sni-chunk"},
+		{"sni-chunk too large", func(c *ProxyConfig) { c.SNIChunk = guiapi.MaxSNIChunk + 1 }, "sni-chunk"},
 		{"ack-timeout zero", func(c *ProxyConfig) { c.AckTimeoutMs = 0 }, "ack-timeout"},
 		{"ack-timeout negative", func(c *ProxyConfig) { c.AckTimeoutMs = -1 }, "ack-timeout"},
-		{"ack-timeout too large", func(c *ProxyConfig) { c.AckTimeoutMs = maxAckTimeoutMs + 1 }, "ack-timeout"},
+		{"ack-timeout too large", func(c *ProxyConfig) { c.AckTimeoutMs = guiapi.MaxAckTimeoutMs + 1 }, "ack-timeout"},
 		{"fake-delay negative", func(c *ProxyConfig) { c.FakeDelayMs = -1 }, "fake-delay"},
-		{"fake-delay too large", func(c *ProxyConfig) { c.FakeDelayMs = maxFakeDelayMs + 1 }, "fake-delay"},
+		{"fake-delay too large", func(c *ProxyConfig) { c.FakeDelayMs = guiapi.MaxFakeDelayMs + 1 }, "fake-delay"},
 		{"fragment-delay negative", func(c *ProxyConfig) { c.FragmentDelayMs = -1 }, "fragment-delay"},
-		{"fragment-delay too large", func(c *ProxyConfig) { c.FragmentDelayMs = maxFragmentDelayMs + 1 }, "fragment-delay"},
+		{"fragment-delay too large", func(c *ProxyConfig) { c.FragmentDelayMs = guiapi.MaxFragmentDelayMs + 1 }, "fragment-delay"},
 		{"injector blank", func(c *ProxyConfig) { c.Injector = "" }, "injector"},
 		{"injector unknown", func(c *ProxyConfig) { c.Injector = "nfqueue" }, "injector"},
 	}
@@ -55,9 +57,9 @@ func TestValidateConfig_Rejects(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := validConfig()
 			tc.mutate(&cfg)
-			err := validateConfig(cfg)
+			err := guiapi.ValidateConfig(cfg)
 			if err == nil {
-				t.Fatalf("validateConfig accepted invalid config %+v", cfg)
+				t.Fatalf("ValidateConfig accepted invalid config %+v", cfg)
 			}
 			if !strings.Contains(err.Error(), tc.wantInMsg) {
 				t.Errorf("error %q does not mention %q", err.Error(), tc.wantInMsg)
@@ -67,23 +69,20 @@ func TestValidateConfig_Rejects(t *testing.T) {
 }
 
 func TestValidateConfig_AcceptsBoundaryValues(t *testing.T) {
-	// SNIChunk == 0 is meaningful in the CLI ("0 = whole hostname in one
-	// write") and must be accepted, as must active/passive injector and
-	// zero-millisecond fake/fragment delays.
 	cases := []struct {
 		name   string
 		mutate func(c *ProxyConfig)
 	}{
 		{"sni-chunk 0", func(c *ProxyConfig) { c.SNIChunk = 0 }},
-		{"sni-chunk at max", func(c *ProxyConfig) { c.SNIChunk = maxSNIChunk }},
+		{"sni-chunk at max", func(c *ProxyConfig) { c.SNIChunk = guiapi.MaxSNIChunk }},
 		{"fake-delay 0", func(c *ProxyConfig) { c.FakeDelayMs = 0 }},
-		{"fake-delay at max", func(c *ProxyConfig) { c.FakeDelayMs = maxFakeDelayMs }},
+		{"fake-delay at max", func(c *ProxyConfig) { c.FakeDelayMs = guiapi.MaxFakeDelayMs }},
 		{"fragment-delay 0", func(c *ProxyConfig) { c.FragmentDelayMs = 0 }},
-		{"fragment-delay at max", func(c *ProxyConfig) { c.FragmentDelayMs = maxFragmentDelayMs }},
+		{"fragment-delay at max", func(c *ProxyConfig) { c.FragmentDelayMs = guiapi.MaxFragmentDelayMs }},
 		{"fake-repeat 1", func(c *ProxyConfig) { c.FakeRepeat = 1 }},
-		{"fake-repeat at max", func(c *ProxyConfig) { c.FakeRepeat = maxFakeRepeat }},
+		{"fake-repeat at max", func(c *ProxyConfig) { c.FakeRepeat = guiapi.MaxFakeRepeat }},
 		{"ack-timeout 1", func(c *ProxyConfig) { c.AckTimeoutMs = 1 }},
-		{"ack-timeout at max", func(c *ProxyConfig) { c.AckTimeoutMs = maxAckTimeoutMs }},
+		{"ack-timeout at max", func(c *ProxyConfig) { c.AckTimeoutMs = guiapi.MaxAckTimeoutMs }},
 		{"injector passive", func(c *ProxyConfig) { c.Injector = "passive" }},
 	}
 
@@ -91,18 +90,13 @@ func TestValidateConfig_AcceptsBoundaryValues(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := validConfig()
 			tc.mutate(&cfg)
-			if err := validateConfig(cfg); err != nil {
+			if err := guiapi.ValidateConfig(cfg); err != nil {
 				t.Fatalf("expected boundary value to pass, got: %v", err)
 			}
 		})
 	}
 }
 
-// buildProxyArgs is the next layer of validation past validateConfig — it
-// runs the same config.ConnectFromCLI + packet.ParseClientHelloID +
-// network.IsIPv4 paths the CLI uses. These tests cover the rejection paths
-// that validateConfig doesn't see (bad uTLS preset, non-IPv4 listen host,
-// IPv6 connect target, malformed addresses).
 func TestBuildProxyArgs_RejectsBadInput(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -135,9 +129,9 @@ func TestBuildProxyArgs_RejectsBadInput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := validConfig()
 			tc.mutate(&cfg)
-			_, _, err := buildProxyArgs(cfg, false)
+			_, _, err := guiapi.BuildProxyArgs(cfg, false)
 			if err == nil {
-				t.Fatalf("buildProxyArgs accepted invalid config %+v", cfg)
+				t.Fatalf("BuildProxyArgs accepted invalid config %+v", cfg)
 			}
 			if !strings.Contains(strings.ToLower(err.Error()), tc.wantInMsg) {
 				t.Errorf("error %q does not mention %q", err.Error(), tc.wantInMsg)
@@ -147,26 +141,21 @@ func TestBuildProxyArgs_RejectsBadInput(t *testing.T) {
 }
 
 func TestBuildProxyArgs_AcceptsLegacyUTLSAndPortZero(t *testing.T) {
-	// "none" disables the uTLS preset path and uses the legacy template;
-	// allowPortZero=true accepts a :0 listen for the matrix runner.
 	cfg := validConfig()
 	cfg.UTLS = "none"
 	cfg.Listen = "127.0.0.1:0"
-	pc, opts, err := buildProxyArgs(cfg, true)
+	pc, opts, err := guiapi.BuildProxyArgs(cfg, true)
 	if err != nil {
 		t.Fatalf("expected legacy uTLS + port:0 to pass, got: %v", err)
 	}
 	if pc == nil {
-		t.Fatal("buildProxyArgs returned nil config without error")
+		t.Fatal("BuildProxyArgs returned nil config without error")
 	}
 	if opts.Injector == "" {
 		t.Fatal("Options.Injector not populated")
 	}
 }
 
-// TestStop_NoopWhenIdle is a tiny state-machine check — Stop on a fresh App
-// must not panic, must not flip flags, and must return nil. The richer
-// concurrent-stop scenarios need a real proxy and live elsewhere.
 func TestStop_NoopWhenIdle(t *testing.T) {
 	a := NewApp()
 	if err := a.Stop(); err != nil {

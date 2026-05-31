@@ -9,7 +9,6 @@
     Stop,
     Status,
     RunTest,
-    Privileged,
   } from "../wailsjs/go/main/App.js";
   import { EventsOn, EventsOff } from "../wailsjs/runtime/runtime.js";
   import type { main } from "../wailsjs/go/models";
@@ -20,13 +19,11 @@
   type ProxyStatus = main.ProxyStatus;
   type TestResult = main.TestResult;
   type TestSummary = main.TestSummary;
-  type PrivilegeStatus = main.PrivilegeStatus;
 
   let cfg: ProxyConfig | null = null;
   let utlsList: string[] = [];
   let injectorList: string[] = [];
   let status: ProxyStatus = { running: false, testing: false, listenAddr: "" };
-  let priv: PrivilegeStatus = { elevated: true, hint: "", platform: "" };
   let logs: LogEntry[] = [];
   let testResults: TestResult[] = [];
   let testSummary: TestSummary | null = null;
@@ -42,7 +39,6 @@
     utlsList = await UTLSPresets();
     injectorList = await InjectorModes();
     status = await Status();
-    priv = await Privileged();
     EventsOn("log", (e: { level: string; message: string }) => {
       pushLog({ ts: Date.now(), level: e.level, message: e.message });
     });
@@ -61,13 +57,15 @@
   });
 
   function pushError(err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    let msg: string;
+    if (typeof err === "string") {
+      msg = err;
+    } else if (err instanceof Error) {
+      msg = err.message;
+    } else {
+      msg = String(err);
+    }
     pushLog({ ts: Date.now(), level: "error", message: msg });
-  }
-
-  function isTestCancelled(err: unknown): boolean {
-    const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-    return msg.includes("cancel");
   }
 
   function partialSummaryFromResults(results: TestResult[]): TestSummary {
@@ -88,6 +86,7 @@
   async function onStart() {
     if (!cfg) return;
     busy = true;
+    rightPanelTab = "logs";
     try {
       await Start(cfg);
     } catch (err) {
@@ -125,7 +124,7 @@
         testResults = testSummary.results;
       }
     } catch (err) {
-      if (isTestCancelled(err) && testResults.length > 0) {
+      if (testResults.length > 0) {
         testSummary = partialSummaryFromResults(testResults);
       } else {
         pushError(err);
@@ -196,14 +195,6 @@
 
 <main class="layout">
   <section class="panel">
-    {#if !priv.elevated}
-      <div class="privilege-banner" role="alert">
-        <span class="privilege-icon">⚠</span>
-        <span>
-          {$_(`privilege.banner_${priv.platform || "windows"}`)}
-        </span>
-      </div>
-    {/if}
     {#if cfg}
       <div class="section-title">{$_("form.section_connection")}</div>
       <div class="grid-2">
@@ -681,24 +672,6 @@
   }
   .log-debug .log-msg {
     color: var(--muted);
-  }
-
-  .privilege-banner {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding-inline: 12px;
-    padding-block: 10px;
-    margin-block-end: 12px;
-    border-radius: var(--radius);
-    background: rgba(255, 214, 107, 0.08);
-    border: 1px solid rgba(255, 214, 107, 0.35);
-    color: var(--warn);
-    font-size: 13px;
-  }
-  .privilege-icon {
-    font-size: 16px;
-    line-height: 1;
   }
 
   .test-preflight {

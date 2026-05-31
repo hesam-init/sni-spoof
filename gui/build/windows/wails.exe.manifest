@@ -13,21 +13,14 @@
         </asmv3:windowsSettings>
     </asmv3:application>
     <!--
-      requireAdministrator triggers a UAC prompt on launch. The app needs
-      Administrator privileges to drive WinDivert; without elevation,
-      Start/RunTest reject with a clear error via the runtime privilege check.
-      The earlier "elevated process never opens a window" symptom turned out
-      to be a Svelte 5 `$:` reactive bug, not an elevation issue.
-
-      Trade-off for dev work: `wails dev` from a non-elevated PowerShell will
-      fail with "fork/exec requires elevation" because it can't spawn an
-      elevated child. Use an elevated terminal for dev sessions (or
-      temporarily comment this block out during local UI iteration).
+      GUI runs asInvoker; packet injection runs in a separate elevated helper
+      (-helper) spawned on Start / Run test matrix. UAC / sudo is requested at
+      action time, not at app launch.
     -->
     <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
         <security>
             <requestedPrivileges>
-                <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+                <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
             </requestedPrivileges>
         </security>
     </trustInfo>

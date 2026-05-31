@@ -272,7 +272,7 @@ endif
 	@ls -lh $(DIST)/sni-spoofing-gui-* 2>/dev/null || true
 
 clean:
-	rm -rf $(BUILD_DIR) dist-gui
+	rm -rf $(BUILD_DIR)
 	rm -f sni-spoofing sni-spoofing.exe sni-spoofing-windows-amd64.exe sni-spoofing-windows-arm64.exe
 	rm -rf $(GUI_WAILS_OUT)
 	find $(GUI_DIR)/frontend/dist -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true

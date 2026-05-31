@@ -58,9 +58,5 @@
   },
   "lang": {
     "label": "Language"
-  },
-  "privilege": {
-    "banner_windows": "This app needs Administrator privileges to drive the packet injector. Close this window, right-click the executable, and choose Run as administrator.",
-    "banner_unix": "This app needs root to drive the packet injector. Relaunch with sudo (e.g. sudo ./sni-spoofing-gui)."
   }
 }

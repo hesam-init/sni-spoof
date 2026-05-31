@@ -25,6 +25,11 @@ var assets embed.FS
 var errFrontendNotBuilt = errors.New("frontend/dist only contains the placeholder .gitkeep — run `wails build` (or `wails dev`) so the embedded assets exist before launching the binary directly")
 
 func main() {
+	if isHelperMode(os.Args) {
+		runHelperMode()
+		return
+	}
+
 	if err := startupVerify(); err != nil {
 		logStartupFailure(err)
 		// Also write to stderr so `go run .` shows it even though Windows GUI
@@ -45,9 +50,9 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 18, G: 22, B: 31, A: 1},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		Bind:             []interface{}{app},
+		OnStartup:  app.startup,
+		OnShutdown: app.shutdown,
+		Bind:       []interface{}{app},
 	})
 
 	if err != nil {

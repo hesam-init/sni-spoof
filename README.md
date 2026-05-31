@@ -4,9 +4,11 @@ A Go implementation of the [SNI-Spoofing](https://github.com/patterniha/SNI-Spoo
 
 This repository provides a local TCP proxy that injects a fake TLS ClientHello with a spoofed SNI during the TCP handshake. The real TLS connection is then relayed, allowing DPI devices to see a decoy SNI while the client continues to talk to the intended target.
 
+Two interfaces share the same proxy core: the **CLI** (`sni-spoofing*`) and an experimental **GUI** (`sni-spoofing-gui*`) — see [GUI (experimental)](#gui-experimental).
+
 ## Quick Usage Guide
 
-### Run
+### CLI
 
 At minimum, provide `-listen` and `-connect`. Use `-fake-sni` when `-connect` is an IP address.
 
@@ -14,7 +16,7 @@ At minimum, provide `-listen` and `-connect`. Use `-fake-sni` when `-connect` is
 ./sni-spoofing -listen 127.0.0.1:40443 -connect 104.19.229.21:443 -fake-sni hcaptcha.com -utls firefox
 ```
 
-Platform-specific notes:
+Platform-specific notes (CLI only):
 
 - **Linux/OpenWrt:** run as `root` or with `sudo`.
 - **macOS:** run with `sudo`; BPF requires root privileges.
@@ -45,9 +47,9 @@ Common presets:
 
 Run `-h` for a full list of supported `-utls` names.
 
-## Configuration
+## Configuration (CLI)
 
-You can use CLI flags or a config file. If `-config` is not specified, the app loads `./config.ini` automatically when present. CLI flags override config values.
+You can use CLI flags or a config file. If `-config` is not specified, the CLI loads `./config.ini` automatically when present. CLI flags override config values. The GUI does not use `config.ini`; settings are edited in the app.
 
 Example `config.ini`:
 
@@ -220,11 +222,11 @@ Expected output:
 
 ## Platforms
 
-| Platform | Notes |
-|----------|-------|
-| Linux/OpenWrt | Requires root. Uses nfqueue + raw socket by default. |
-| macOS | Requires sudo. Uses BPF tap and passive injection. |
-| Windows | Requires Administrator. Uses WinDivert. CLI: `sni-spoofing-windows-amd64.exe`, `sni-spoofing-windows-arm64.exe`. |
+| Platform | CLI | GUI |
+|----------|-----|-----|
+| Linux/OpenWrt | Requires root. Uses nfqueue + raw socket by default. | Normal user at launch; `sudo`/`pkexec` when starting proxy or tests. |
+| macOS | Requires sudo. Uses BPF tap and passive injection. | Normal user at launch; elevation when starting proxy or tests. |
+| Windows | Requires Administrator. Uses WinDivert. Binaries: `sni-spoofing-windows-amd64.exe`, `sni-spoofing-windows-arm64.exe`. | Normal user at launch; UAC when starting proxy or tests. Binaries: `sni-spoofing-gui-windows-amd64.exe`, `sni-spoofing-gui-windows-arm64.exe`. |
 
 ### OpenWrt setup for active injector mode
 
@@ -239,13 +241,17 @@ apk install iptables-mod-nfqueue kmod-nfnetlink-queue
 
 Desktop app ([Wails](https://wails.io) + Svelte) in [gui/](gui/) — English/Persian UI, same proxy core as the CLI. Separate `gui/go.mod` keeps Wails out of the CLI build.
 
+The GUI runs **without** admin at launch. When you **Start** the proxy or **Run test matrix**, it spawns an elevated **helper** process (same binary, `-helper` mode) and talks to it over authenticated localhost TCP. You approve UAC / `sudo` / `pkexec` at that point — typically once per app session, not on every start/stop.
+
 ```bash
 make deps-linux    # Linux: GTK + WebKit (once)
 make gui           # this machine → dist/
 make gui-dist      # all GUI targets for this host
 ```
 
-Go 1.25+, Node 20.19+. Same root/admin privileges as the CLI. `make gui*` installs Wails to `$(go env GOPATH)/bin/wails`. Linux release builds need `-tags webkit2_41` (Ubuntu 24.04+, Debian 13). `gui-linux-arm64` needs an arm64 host, not x86 cross-compile.
+Go 1.25+, Node 20.19+. `make gui*` installs Wails to `$(go env GOPATH)/bin/wails`. Linux release builds need `-tags webkit2_41` (Ubuntu 24.04+, Debian 13). `gui-linux-arm64` needs an arm64 host, not x86 cross-compile.
+
+Settings are edited in the UI (no `config.ini`). Logs and test results appear in the app; helper diagnostics are appended to `%LOCALAPPDATA%\sni-spoofing-gui\helper.log` on Windows (or the platform user-cache equivalent).
 
 ### GUI development (live reload)
 
@@ -260,7 +266,7 @@ Wails runs the Vite dev server and reloads the UI on frontend changes. Add `$(go
 
 **Linux:** install deps with `make deps-linux` first. If `wails dev` fails on WebKitGTK 4.1-only distros, use `wails dev -tags webkit2_41`.
 
-**Windows:** `build/windows/wails.exe.manifest` requires Administrator — start an elevated terminal before `wails dev`, or WinDivert-related startup fails with `requires elevation`. For UI-only work you may temporarily comment out the `<trustInfo>` block in that manifest; restore it before release builds.
+**Windows:** the GUI manifest uses `asInvoker` — run `wails dev` from a normal terminal. Elevation is requested when you start the proxy or run the test matrix in the UI, not at app launch.
 
 **macOS:** install Xcode Command Line Tools ([Wails docs](https://wails.io/docs/gettingstarted/installation)).
 
@@ -283,7 +289,7 @@ make clean
 
 **GUI** (`dist/`): `sni-spoofing-gui-linux-amd64`, `sni-spoofing-gui-linux-arm64`, `sni-spoofing-gui-windows-amd64.exe`, `sni-spoofing-gui-windows-arm64.exe`, `sni-spoofing-gui-darwin-universal.zip` — via `make gui-linux-amd64`, `gui-linux-arm64`, `gui-windows-amd64`, `gui-windows-arm64`, `gui-darwin-universal`.
 
-Put `config.ini` next to the binary you run, not in `dist/`. Run `make help` for all targets.
+Put `config.ini` next to the **CLI** binary you run, not in `dist/`. The GUI does not read `config.ini`. Run `make help` for all targets.
 
 ## License
 

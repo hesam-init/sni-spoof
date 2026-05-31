@@ -6,6 +6,9 @@ This repository provides a local TCP proxy that injects a fake TLS ClientHello w
 
 Two interfaces share the same proxy core: the **CLI** (`sni-spoofing*`) and an experimental **GUI** (`sni-spoofing-gui*`) — see [GUI (experimental)](#gui-experimental).
 
+<img width="1086" height="753" alt="image" src="https://github.com/user-attachments/assets/9a1881b2-d8bd-4840-83ce-1b7615f08d0f" />
+
+
 ## Quick Usage Guide
 
 ### CLI

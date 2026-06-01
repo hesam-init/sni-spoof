@@ -1,0 +1,48 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="SNI Spoofing - shielded proxy route with decoy SNI branch">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1a2030"/>
+      <stop offset="0.58" stop-color="#121620"/>
+      <stop offset="1" stop-color="#0f131c"/>
+    </linearGradient>
+    <linearGradient id="route" x1="46" y1="156" x2="210" y2="156" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3ddc97"/>
+      <stop offset="0.45" stop-color="#4ea1ff"/>
+      <stop offset="1" stop-color="#2a7fd6"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="76" y1="52" x2="181" y2="201" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#25304a"/>
+      <stop offset="1" stop-color="#171d2a"/>
+    </linearGradient>
+    <linearGradient id="decoy" x1="120" y1="148" x2="192" y2="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd66b"/>
+      <stop offset="1" stop-color="#ff8a4c"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="127" cy="127" r="104" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4ea1ff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#4ea1ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="12" y="12" width="232" height="232" rx="50" fill="url(#tile)"/>
+  <rect x="12.5" y="12.5" width="231" height="231" rx="49.5" stroke="#2c344a"/>
+  <circle cx="127" cy="127" r="104" fill="url(#halo)"/>
+
+  <path d="M47 156H91M165 156H209" stroke="#0f131c" stroke-width="20" stroke-linecap="round" opacity="0.7"/>
+  <path d="M47 156H91M165 156H209" stroke="url(#route)" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="47" cy="156" r="17" fill="#3ddc97"/>
+  <circle cx="47" cy="156" r="7" fill="#121620" opacity="0.75"/>
+  <circle cx="209" cy="156" r="17" fill="#2a7fd6"/>
+  <path d="M202 156h14" stroke="#121620" stroke-width="5" stroke-linecap="round"/>
+
+  <path d="M128 48C145 60 166 65 183 67V112C183 153 162 181 128 199C94 181 73 153 73 112V67C90 65 111 60 128 48Z" fill="url(#shield)" stroke="#2c344a" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M128 62C142 71 159 75 173 77V113C173 147 156 171 128 187C100 171 83 147 83 113V77C97 75 114 71 128 62Z" stroke="#4ea1ff" stroke-width="5" stroke-linejoin="round" opacity="0.92"/>
+  <path d="M101 156H155" stroke="#0f131c" stroke-width="20" stroke-linecap="round" opacity="0.7"/>
+  <path d="M101 156H155" stroke="url(#route)" stroke-width="12" stroke-linecap="round"/>
+
+  <path d="M128 151C139 128 158 101 191 88" stroke="#121620" stroke-width="14" stroke-linecap="round" opacity="0.7"/>
+  <path d="M128 151C139 128 158 101 191 88" stroke="url(#decoy)" stroke-width="8" stroke-linecap="round" stroke-dasharray="1 16"/>
+  <circle cx="191" cy="88" r="13" fill="#211b18" stroke="#ffd66b" stroke-width="5"/>
+  <circle cx="128" cy="151" r="10" fill="#ffd66b"/>
+  <circle cx="128" cy="151" r="4" fill="#121620" opacity="0.8"/>
+</svg>

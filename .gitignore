@@ -1,37 +1,22 @@
-# Binaries (see Makefile)
-/sni-spoofing
-/sni-spoofing.exe
 /dist/
 /v2raya
 ./v2raya
 /v2ray-configs
 ./v2ray-configs
+/.build/
 
-# Go build / test
-*.test
-*.out
-coverage.out
-coverage.html
-/vendor/
+/gui/build/bin/
+/gui/frontend/dist/*
+!/gui/frontend/dist/.gitkeep
+/gui/frontend/node_modules/
+/gui/frontend/wailsjs/
+/gui/frontend/package.json.md5
 
-# WinDivert download cache (make windivert)
-.cache/
-
-# Editor / IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
 
-# OS
 .DS_Store
 Thumbs.db
-
-# Local overrides (optional: uncomment if you keep secrets out of config.json)
-# config.local.json
-
-# WinDivert runtime files often copied next to the Windows binary (not in repo)
-WinDivert.dll
-WinDivert32.sys
-WinDivert64.sys
